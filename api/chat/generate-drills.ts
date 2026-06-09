@@ -76,7 +76,7 @@ SECTION: ${ctx.label}
 === PASSAGE (WRITE THIS FIRST) ===
 ${ctx.passageInstructions}
 
-CRITICAL PASSAGE LENGTH RULE: The passage MUST be 400–600 words. You must write SIX full paragraphs as described above. Each paragraph must be 60–100 words. Do not write a short passage — if you count fewer than 400 words, keep writing.
+CRITICAL PASSAGE LENGTH RULE: The passage MUST be 300–600 words total. Write 4–6 full paragraphs. Do not stop early — a passage under 300 words is too short. The same passage is shown to the student for ALL 5 questions, so it must contain enough detail to support 5 different questions.
 
 === 5 QUESTIONS ===
 ${ctx.questionInstructions}
@@ -88,7 +88,7 @@ ${ctx.questionInstructions}
 === JSON OUTPUT ===
 {
   "passageTitle": "Passage 1 (Questions 1–5)",
-  "passage": "[SIX PARAGRAPHS, 400-600 WORDS TOTAL]",
+  "passage": "[4-6 paragraphs, 300-600 words — same passage for all 5 questions]",
   "drills": [
     { "questionNumber": 1, "question": "...", "options": ["A. ...", "B. ...", "C. ...", "D. ..."], "correctAnswerIndex": 0, "explanation": "Why correct. Why A wrong. Why B wrong. Why C wrong. Why D wrong." },
     { "questionNumber": 2, "question": "...", "options": ["A. ...", "B. ...", "C. ...", "D. ..."], "correctAnswerIndex": 1, "explanation": "..." },
@@ -101,7 +101,7 @@ ${ctx.questionInstructions}
   const userPrompt = `Write a ${ctx.label} passage and 5 questions for this micro-skill:
 "${microSkillName}" — ${microSkillDescription || ""}
 
-REMINDER: The passage must be 400–600 words across SIX paragraphs. Return valid JSON only.`;
+REMINDER: The passage must be 300–600 words across 4-6 paragraphs. Return valid JSON only.`;
 
   try {
     const completion = await groq.chat.completions.create({
