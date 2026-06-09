@@ -9,33 +9,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { microSkillName, microSkillDescription } = req.body;
   if (!microSkillName) return res.status(400).json({ error: "Missing micro-skill name." });
 
-  const systemPrompt = `You are an AAMC MCAT question writer. Generate exactly 3 passage-based MCAT questions in the exact style of the real AAMC MCAT exam. You MUST respond with valid JSON only — no markdown, no extra text.
+  const systemPrompt = `You are an AAMC MCAT question writer. Generate exactly 1 passage with 4 questions in the exact format of the real AAMC MCAT exam. You MUST respond with valid JSON only — no markdown, no extra text.
 
-AAMC MCAT question style rules you MUST follow:
-1. Passages are 150-200 words, written like a real journal article or research study excerpt — dense, information-rich, with specific data, enzyme names, experimental conditions, numerical values, or patient data woven in.
-2. Questions do NOT test simple recall — they require the student to APPLY passage information + outside knowledge together.
-3. Questions use stems like: "Which of the following best explains...", "The researcher would most likely conclude...", "Which of the following findings would most support...", "Based on the passage, if X were true, then Y would..."
-4. Wrong answers are plausible and target common MCAT misconceptions — not obviously wrong.
-5. NEVER reference figures, graphs, images, tables, or any visual aids. All information must be fully in text.
-6. Timing context: students have ~90 seconds per question on the real MCAT.
+AAMC MCAT format rules:
+1. ONE passage, 150-200 words. Written like a real research study or experiment excerpt — dense, with specific numerical data, enzyme names, experimental conditions, measurements, and results. NOT a clinical case.
+2. ALL 4 questions reference the SAME passage. The passage stays visible on screen the entire time.
+3. Questions require combining passage information WITH outside MCAT knowledge — not one or the other alone.
+4. Use real AAMC question stems: "Which of the following best explains...", "The researcher would most likely conclude...", "Which finding would most support the hypothesis that...", "If the experiment were repeated with X instead of Y, the result would most likely..."
+5. Wrong answer choices must be plausible — they should be things students who partially understand the concept would choose.
+6. NEVER reference any figures, graphs, images, or tables. All information is in text only.
+7. Label the passage set correctly.
 
-Return this exact JSON structure:
+Return this exact JSON:
 {
+  "passageTitle": "Passage 1 (Questions 1–4)",
+  "passage": "full 150-200 word research passage text here",
   "drills": [
     {
-      "passage": "dense 150-200 word research/clinical passage with specific data",
-      "question": "AAMC-style question stem requiring analysis not recall",
+      "questionNumber": 1,
+      "question": "AAMC-style question stem",
       "options": ["A. option", "B. option", "C. option", "D. option"],
       "correctAnswerIndex": 0,
-      "explanation": "why correct answer is right AND why each wrong answer is wrong — reference specific passage details"
-    }
+      "explanation": "Why correct answer is right. Why A is wrong. Why B is wrong. Why C is wrong. Why D is wrong. Reference specific passage details."
+    },
+    { "questionNumber": 2, ... },
+    { "questionNumber": 3, ... },
+    { "questionNumber": 4, ... }
   ]
 }`;
 
-  const userPrompt = `Generate 3 AAMC MCAT-style passage-based questions targeting:
-Micro-skill: "${microSkillName}" — ${microSkillDescription || ""}
+  const userPrompt = `Generate 1 passage + 4 AAMC MCAT-style questions targeting this micro-skill:
+"${microSkillName}" — ${microSkillDescription || ""}
 
-Each passage must read like a real MCAT research excerpt. Questions must require analysis, not recall. correctAnswerIndex must be 0-3. Explain why EACH wrong answer is wrong, referencing both passage details and outside knowledge.`;
+The passage must be a research/experiment excerpt with real data. Questions must require passage + outside knowledge combined. correctAnswerIndex must be 0-3. Return JSON only.`;
 
   try {
     const completion = await groq.chat.completions.create({

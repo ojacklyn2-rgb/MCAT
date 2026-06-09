@@ -306,11 +306,19 @@ export function ActiveChatSession({
       }
 
       const data = await response.json();
-      
+      // Attach questionNumber as id if missing
+      const drills = (data.drills || []).map((d: any, i: number) => ({
+        ...d,
+        id: d.id || `drill_${Date.now()}_${i}`,
+        microSkill: session.microSkill?.name || ''
+      }));
+
       onUpdateSession({
         ...session,
         stage: 'mastery',
-        drills: data.drills,
+        drills,
+        drillPassage: data.passage || '',
+        drillPassageTitle: data.passageTitle || 'Passage 1 (Questions 1–4)',
         drillStreak: 0,
         drillHistory: []
       });
@@ -724,201 +732,154 @@ export function ActiveChatSession({
 
         {/* ==================== STAGE 3: MASTERY DRILLS ==================== */}
         {session.stage === 'mastery' && session.drills && session.drills.length > 0 && (
-          <div className="bg-white border border-[#e4e4e3] p-5 rounded-md space-y-5 shadow-[0_1px_2px_rgba(15,15,15,0.05)]" id="mastery-drills-panel">
+          <div className="bg-white border border-[#e4e4e3] rounded-md shadow-[0_1px_2px_rgba(15,15,15,0.05)] overflow-hidden" id="mastery-drills-panel">
             
-            {/* Headers, Streak Counter + Timer */}
-            <div className="flex justify-between items-center pb-3 border-b border-[#e4e4e3]" id="drills-stat-header">
-              <div className="space-y-0.5">
-                <span className="text-[10px] text-[#37352f]/40 font-semibold tracking-wider font-sans uppercase">ACTIVE RECALL CHALLENGE</span>
-                <h3 className="font-bold text-[#37352f] font-sans text-xs">Target Streak: 3 in a row</h3>
-              </div>
-
-              <div className="flex items-center gap-4">
-                {/* Timer */}
-                {!hasSubmittedAnswer && (
-                  <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded border font-mono text-xs font-bold transition-colors ${
-                    timerExpired ? 'bg-red-50 border-red-300 text-red-600' :
-                    timeLeft <= 20 ? 'bg-orange-50 border-orange-300 text-orange-600' :
-                    timeLeft <= 45 ? 'bg-yellow-50 border-yellow-200 text-yellow-700' :
-                    'bg-[#f1f1ef] border-[#e4e4e3] text-[#37352f]/70'
-                  }`}>
-                    <span>{timerExpired ? 'TIME' : `${Math.floor(timeLeft/60)}:${String(timeLeft%60).padStart(2,'0')}`}</span>
-                  </div>
-                )}
-
-                {/* Streak bubbles */}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-[#37352f]/60 font-sans">Streak:</span>
-                  <div className="flex gap-1">
-                    {[1, 2, 3].map((val) => (
-                      <div key={val} className={`h-5 w-5 rounded-full flex items-center justify-center border font-sans text-[10px] font-bold transition-all ${
-                        session.drillStreak >= val ? 'bg-[#2ebd6e] text-white border-[#249557]' : 'bg-[#f1f1ef] text-[#37352f]/50 border-[#e4e4e3]'
-                      }`}>{val}</div>
-                    ))}
-                  </div>
+            {/* Top bar: passage title + streak + timer */}
+            <div className="flex justify-between items-center px-4 py-2.5 bg-[#37352f] text-white" id="drills-stat-header">
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] font-bold tracking-wider uppercase opacity-80">{session.drillPassageTitle || 'Passage 1 (Questions 1–4)'}</span>
+                <span className="text-[10px] opacity-50">|</span>
+                <span className="text-[10px] opacity-70">Q {activeDrillIndex + 1} of {session.drills.length} · Streak:</span>
+                <div className="flex gap-1">
+                  {[1,2,3].map(val => (
+                    <div key={val} className={`h-4 w-4 rounded-full flex items-center justify-center text-[9px] font-bold border transition-all ${
+                      session.drillStreak >= val ? 'bg-[#2ebd6e] border-[#2ebd6e] text-white' : 'bg-transparent border-white/30 text-white/40'
+                    }`}>{val}</div>
+                  ))}
                 </div>
               </div>
+              {!hasSubmittedAnswer && (
+                <div className={`font-mono text-xs font-bold px-2.5 py-0.5 rounded transition-colors ${
+                  timerExpired ? 'bg-red-500 text-white' :
+                  timeLeft <= 20 ? 'bg-orange-400 text-white' :
+                  timeLeft <= 45 ? 'bg-yellow-400 text-[#37352f]' :
+                  'bg-white/10 text-white'
+                }`}>
+                  {timerExpired ? 'TIME' : `${Math.floor(timeLeft/60)}:${String(timeLeft%60).padStart(2,'0')}`}
+                </div>
+              )}
             </div>
 
-            {/* Drill Content */}
+            {/* AAMC Split Layout: Passage LEFT | Question RIGHT */}
             {(() => {
               const currentDrill = session.drills[activeDrillIndex];
-              if (!currentDrill) return <div className="text-center font-sans text-xs text-[#37352f]/50 py-12">Retrieving question state...</div>;
+              if (!currentDrill) return <div className="text-center text-xs text-[#37352f]/50 py-12 p-6">Loading question...</div>;
 
               return (
-                <div className="space-y-4" id={`drill-item-${activeDrillIndex}`}>
-                  
-                  {/* Research/Clinical Passage Box */}
-                  {currentDrill.passage && (
-                    <div className="p-3.5 bg-[#f7f7f5]/80 border border-[#e4e4e3] rounded-md text-[11px] leading-relaxed font-sans text-[#37352f]/85 space-y-1.5" id="drill-passage-box">
-                      <span className="font-bold text-[#37352f]/50 block uppercase tracking-wider text-[9px] flex items-center gap-1 font-sans">
-                        <FileText size={11} /> CLINICAL PASSAGE / EXPERIMENT PROTOCOL
-                      </span>
-                      <p className="leading-normal">{currentDrill.passage}</p>
+                <div className="flex flex-col lg:flex-row min-h-[520px]" id={`drill-item-${activeDrillIndex}`}>
+
+                  {/* LEFT: Passage panel */}
+                  <div className="lg:w-[45%] border-b lg:border-b-0 lg:border-r border-[#e4e4e3] bg-[#fafaf8] p-5 overflow-y-auto" id="passage-panel">
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-1.5 pb-2 border-b border-[#e4e4e3]">
+                        <FileText size={11} className="text-[#37352f]/40 shrink-0" />
+                        <span className="text-[9px] font-bold text-[#37352f]/40 uppercase tracking-wider">Research Passage</span>
+                      </div>
+                      <p className="text-xs text-[#37352f]/85 font-sans leading-relaxed whitespace-pre-line">
+                        {session.drillPassage || currentDrill.passage || ''}
+                      </p>
                     </div>
-                  )}
-
-                  {/* Figure placeholder if question references a graph/figure */}
-                  {/figure|graph|chart|table|shown below|diagram|plot|curve/i.test((currentDrill.passage || '') + currentDrill.question) && (
-                    <div className="border border-dashed border-[#c0b8a0] bg-[#fafaf7] rounded p-3 text-center text-[11px] text-[#37352f]/50 font-sans italic" id="figure-placeholder">
-                      [ Figure referenced in this question — not shown. Use the passage context and your knowledge to answer. ]
-                    </div>
-                  )}
-
-                  {/* Core Question Text */}
-                  <h4 className="font-bold text-[#37352f] font-sans text-xs sm:text-sm leading-normal" id="drill-question-text">
-                    Q: {currentDrill.question}
-                  </h4>
-
-                  {/* Option Choice grid */}
-                  <div className="grid grid-cols-1 gap-2" id="drill-options-grid">
-                    {currentDrill.options.map((option, idx) => {
-                      const letters = ['A', 'B', 'C', 'D'];
-                      const isSelected = selectedOption === idx;
-                      const isCorrectAnswer = idx === currentDrill.correctAnswerIndex;
-                      
-                      let containerClass = "border-[#e4e4e3] bg-white hover:bg-[#f7f7f5]/40";
-                      let badgeClass = "bg-[#f1f1ef] text-[#37352f]";
-
-                      if (isSelected) {
-                        containerClass = "border-[#37352f] bg-[#efeee3] font-semibold";
-                        badgeClass = "bg-[#37352f] text-white";
-                      }
-
-                      if (hasSubmittedAnswer) {
-                        if (isCorrectAnswer) {
-                          containerClass = "border-[#2ebd6e] bg-[#f0f9f4] text-[#1b5d38] font-bold";
-                          badgeClass = "bg-[#2ebd6e] text-white";
-                        } else if (isSelected) {
-                          containerClass = "border-red-400 bg-red-50/40 text-red-950";
-                          badgeClass = "bg-red-500 text-white";
-                        } else {
-                          containerClass = "border-[#e4e4e3] bg-white opacity-40";
-                        }
-                      }
-
-                      return (
-                        <button
-                          key={idx}
-                          type="button"
-                          disabled={hasSubmittedAnswer}
-                          onClick={() => setSelectedOption(idx)}
-                          className={`w-full text-left p-3 border rounded-md flex items-start gap-2.5 transition-all font-sans text-xs sm:text-sm cursor-pointer ${containerClass}`}
-                          id={`option-btn-${idx}`}
-                        >
-                          <span className={`h-5 w-5 rounded-sm shrink-0 flex items-center justify-center font-bold text-[10px] border border-transparent font-sans ${badgeClass}`}>
-                            {letters[idx]}
-                          </span>
-                          <span className="mt-0.5 leading-snug">{option}</span>
-                        </button>
-                      );
-                    })}
                   </div>
 
-                  {/* Action buttons */}
-                  <div className="flex justify-end gap-2.5 pt-2" id="drill-execution-footer">
-                    {!hasSubmittedAnswer ? (
-                      <button
-                        type="button"
-                        disabled={selectedOption === null}
-                        onClick={handleAnswerSubmit}
-                        className="px-4 py-1.5 bg-[#37352f] hover:bg-[#2c2b27] text-white rounded font-sans text-xs font-semibold disabled:opacity-50 transition-all cursor-pointer"
-                        id="submit-choice-btn"
-                      >
-                        Submit Answer Choice
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={handleNextDrill}
-                        className="px-4 py-1.5 bg-[#37352f] hover:bg-[#2c2b27] text-white rounded font-sans text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer"
-                        id="proceed-drill-btn"
-                      >
-                        {session.drillStreak >= 3 ? 'Unlock Flashcard Builder' : 'Next MCQ Challenge'} <ArrowRight size={12} />
-                      </button>
+                  {/* RIGHT: Question panel */}
+                  <div className="lg:w-[55%] p-5 flex flex-col gap-4 overflow-y-auto" id="question-panel">
+
+                    {/* Question number + text */}
+                    <div className="space-y-2">
+                      <span className="text-[9px] font-bold text-[#37352f]/40 uppercase tracking-wider">Question {activeDrillIndex + 1}</span>
+                      <p className="font-semibold text-[#37352f] text-sm leading-snug">{currentDrill.question}</p>
+                    </div>
+
+                    {/* Answer choices */}
+                    <div className="space-y-2" id="drill-options-grid">
+                      {currentDrill.options.map((option, idx) => {
+                        const letters = ['A','B','C','D'];
+                        const isSelected = selectedOption === idx;
+                        const isCorrect = idx === currentDrill.correctAnswerIndex;
+                        let cls = "border-[#e4e4e3] bg-white hover:bg-[#f7f7f5]";
+                        let badge = "bg-[#f1f1ef] text-[#37352f]";
+                        if (isSelected && !hasSubmittedAnswer) { cls = "border-[#37352f] bg-[#efeee3]"; badge = "bg-[#37352f] text-white"; }
+                        if (hasSubmittedAnswer) {
+                          if (isCorrect) { cls = "border-green-400 bg-green-50"; badge = "bg-green-500 text-white"; }
+                          else if (isSelected) { cls = "border-red-400 bg-red-50"; badge = "bg-red-500 text-white"; }
+                          else { cls = "border-[#e4e4e3] bg-white opacity-40"; }
+                        }
+                        return (
+                          <button key={idx} type="button" disabled={hasSubmittedAnswer} onClick={() => setSelectedOption(idx)}
+                            className={`w-full text-left p-3 border rounded-md flex items-start gap-2.5 transition-all font-sans text-xs cursor-pointer ${cls}`}>
+                            <span className={`h-5 w-5 rounded-sm shrink-0 flex items-center justify-center font-bold text-[10px] ${badge}`}>{letters[idx]}</span>
+                            <span className="leading-snug mt-0.5">{option}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Submit / Next */}
+                    <div className="flex justify-end pt-1">
+                      {!hasSubmittedAnswer ? (
+                        <button type="button" disabled={selectedOption === null} onClick={handleAnswerSubmit}
+                          className="px-5 py-2 bg-[#37352f] hover:bg-[#2c2b27] text-white rounded font-sans text-xs font-semibold disabled:opacity-40 cursor-pointer transition-all">
+                          Submit Answer
+                        </button>
+                      ) : (
+                        <button type="button" onClick={handleNextDrill}
+                          className="px-5 py-2 bg-[#37352f] hover:bg-[#2c2b27] text-white rounded font-sans text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-all">
+                          {session.drillStreak >= 3 ? 'Unlock Flashcard Builder' : 'Next Question'} <ArrowRight size={11} />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Explanation after answer */}
+                    {hasSubmittedAnswer && (
+                      <div className="space-y-3 border-t border-[#e4e4e3] pt-3">
+                        <div className={`p-3.5 rounded-md border text-xs font-sans space-y-1.5 ${
+                          selectedOption === currentDrill.correctAnswerIndex
+                            ? 'bg-[#f0f9f4] border-green-200 text-[#1b5d38]'
+                            : 'bg-[#fdf3f3] border-red-200 text-[#6b2121]'
+                        }`}>
+                          <div className="flex items-center gap-1.5 font-bold text-[9px] uppercase tracking-wider">
+                            {selectedOption === currentDrill.correctAnswerIndex
+                              ? <><CheckCircle2 size={11} /> Correct</>
+                              : <><XCircle size={11} /> Incorrect</>}
+                          </div>
+                          <p className="leading-relaxed whitespace-pre-line text-[#37352f]/90">{currentDrill.explanation}</p>
+                        </div>
+
+                        {/* Post-answer tutor chat */}
+                        <div className="border border-[#e4e4e3] rounded-md bg-white">
+                          <div className="px-3 py-2 border-b border-[#e4e4e3] flex items-center gap-1.5">
+                            <MessageSquare size={11} className="text-[#37352f]/50" />
+                            <span className="text-[10px] font-bold text-[#37352f]/60 uppercase tracking-wider">Ask your tutor about this question</span>
+                          </div>
+                          {drillChatMessages.length > 0 && (
+                            <div className="p-3 space-y-2 max-h-40 overflow-y-auto">
+                              {drillChatMessages.map((m, i) => (
+                                <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                  <div className={`max-w-[85%] rounded p-2.5 text-xs leading-relaxed font-sans ${
+                                    m.role === 'user' ? 'bg-[#efeee3] text-[#37352f]' : 'bg-[#f7f7f5] border border-[#e4e4e3] text-[#37352f]/90'
+                                  }`}>{m.text}</div>
+                                </div>
+                              ))}
+                              {isDrillChatLoading && (
+                                <div className="flex justify-start">
+                                  <div className="bg-[#f7f7f5] border border-[#e4e4e3] rounded p-2.5 text-xs text-[#37352f]/50">Thinking...</div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          <form onSubmit={handleDrillChatSend} className="flex gap-2 p-2.5 border-t border-[#e4e4e3]">
+                            <input type="text" value={drillChatText} onChange={e => setDrillChatText(e.target.value)}
+                              placeholder="Why was my answer wrong? What concept am I missing?"
+                              className="flex-1 p-2 border border-[#e4e4e3] rounded text-xs font-sans focus:outline-none focus:border-zinc-400 bg-white" />
+                            <button type="submit" disabled={isDrillChatLoading}
+                              className="px-3 py-2 bg-[#37352f] hover:bg-[#2c2b27] text-white rounded text-xs cursor-pointer disabled:opacity-50">
+                              <Send size={11} />
+                            </button>
+                          </form>
+                        </div>
+                      </div>
                     )}
                   </div>
-
-                  {/* Explanation + post-answer discussion */}
-                  {hasSubmittedAnswer && (
-                    <div className="space-y-3 mt-3">
-                      {/* Explanation box */}
-                      <div className={`p-4 rounded-md border space-y-1.5 text-xs font-sans ${
-                        selectedOption === currentDrill.correctAnswerIndex
-                          ? 'bg-[#f0f9f4] border-[#249557]/30 text-[#1b5d38]'
-                          : 'bg-[#fdf3f3] border-[#e0b0b0]/30 text-[#6b2121]'
-                      }`} id="drill-explanations-box">
-                        <div className="flex items-center gap-1 font-bold uppercase tracking-wider text-[9px]">
-                          {selectedOption === currentDrill.correctAnswerIndex ? (
-                            <span className="flex items-center gap-1.5 text-[#1b5d38]"><CheckCircle2 size={12} /> CORRECT</span>
-                          ) : (
-                            <span className="flex items-center gap-1.5 text-[#6b2121]"><XCircle size={12} /> INCORRECT</span>
-                          )}
-                        </div>
-                        <p className="leading-relaxed opacity-90 whitespace-pre-line text-xs font-sans text-[#37352f]/90">
-                          {currentDrill.explanation}
-                        </p>
-                      </div>
-
-                      {/* Post-answer discussion chat */}
-                      <div className="border border-[#e4e4e3] rounded-md bg-white" id="drill-discussion-chat">
-                        <div className="px-3 py-2 border-b border-[#e4e4e3] flex items-center gap-1.5">
-                          <MessageSquare size={11} className="text-[#37352f]/50" />
-                          <span className="text-[10px] font-bold text-[#37352f]/60 uppercase tracking-wider">Discuss this question with your tutor</span>
-                        </div>
-                        {drillChatMessages.length > 0 && (
-                          <div className="p-3 space-y-2 max-h-48 overflow-y-auto">
-                            {drillChatMessages.map((m, i) => (
-                              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                <div className={`max-w-[85%] rounded p-2.5 text-xs font-sans leading-relaxed ${
-                                  m.role === 'user' ? 'bg-[#efeee3] text-[#37352f]' : 'bg-[#f7f7f5] border border-[#e4e4e3] text-[#37352f]/90'
-                                }`}>{m.text}</div>
-                              </div>
-                            ))}
-                            {isDrillChatLoading && (
-                              <div className="flex justify-start">
-                                <div className="bg-[#f7f7f5] border border-[#e4e4e3] rounded p-2.5 text-xs text-[#37352f]/50 font-sans">Thinking...</div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        <form onSubmit={handleDrillChatSend} className="flex gap-2 p-2.5 border-t border-[#e4e4e3]">
-                          <input
-                            type="text"
-                            value={drillChatText}
-                            onChange={e => setDrillChatText(e.target.value)}
-                            placeholder="Ask about this question, why your answer was wrong, clarify the concept..."
-                            className="flex-1 p-2 border border-[#e4e4e3] rounded text-xs font-sans focus:outline-none focus:border-zinc-400 bg-white"
-                          />
-                          <button type="submit" disabled={isDrillChatLoading}
-                            className="px-3 py-2 bg-[#37352f] hover:bg-[#2c2b27] text-white rounded text-xs cursor-pointer disabled:opacity-50 transition-colors">
-                            <Send size={11} />
-                          </button>
-                        </form>
-                      </div>
-                    </div>
-                  )}
-
                 </div>
               );
             })()}

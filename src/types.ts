@@ -35,14 +35,16 @@ export interface ChatSession {
   createdAt: number;
   stage: 'intake' | 'socratic' | 'mastery' | 'flashcard' | 'completed';
   microSkill?: MicroSkill;
-  conceptSummary?: string; // plain language explanation
+  conceptSummary?: string;
   messages: ChatMessage[];
   errorInputText?: string;
   errorInputImage?: string; // base64
   drills: PracticeQuestion[];
+  drillPassage?: string; // shared passage for current drill set
+  drillPassageTitle?: string; // e.g. "Passage 1 (Questions 1-4)"
   drillStreak: number; // needs to reach 3
   drillHistory: { questionId: string; correct: boolean }[];
-  userExplanationPrompt?: string; // Socratic verification prompt
+  userExplanationPrompt?: string;
 }
 
 export interface Flashcard {
