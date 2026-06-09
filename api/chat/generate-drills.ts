@@ -3,70 +3,61 @@ import Groq from "groq-sdk";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-const SECTION_CONTEXT: Record<string, {
-  label: string;
-  passageLabel: string;
-  passageInstructions: string;
-  questionInstructions: string;
-}> = {
+const SECTION_CONTEXT: Record<string, { label: string; passageLabel: string; passageInstructions: string; questionInstructions: string }> = {
   CP: {
     label: "Chemical and Physical Foundations (C/P)",
     passageLabel: "Research Passage",
-    passageInstructions: `Write a 400-600 word research experiment passage about chemistry or physics. Include:
-- Specific numerical data (concentrations, pH values, rate constants, voltages, pressures, temperatures, wavelengths)
-- Experimental setup and methodology in detail
-- Results with measurements and observations
-- Multiple paragraphs covering background theory, procedure, and findings
-Topics: general chemistry, organic chemistry, biochemistry, thermodynamics, electrochemistry, acid-base chemistry, kinetics, optics, fluid dynamics, lab techniques, spectroscopy.
-DO NOT write a clinical patient case. This must be a laboratory/research experiment.`,
-    questionInstructions: `Questions must require combining passage data with outside MCAT chemistry/physics/biochemistry knowledge. Include quantitative reasoning and unit analysis. Use AAMC stems like "Which of the following best explains...", "The researcher would most likely conclude...", "If X were changed to Y, the result would most likely be..."`
+    passageInstructions: `Write a detailed chemistry or physics research experiment passage. Cover all of these in separate paragraphs:
+Paragraph 1 (background, ~80 words): Introduce the scientific concept and why it matters.
+Paragraph 2 (context, ~80 words): Prior research or theoretical framework relevant to the experiment.
+Paragraph 3 (methods, ~90 words): Detailed experimental setup — specific reagents, concentrations, temperatures, instruments used.
+Paragraph 4 (results, ~90 words): Quantitative findings — numerical data, rates, measurements, observations.
+Paragraph 5 (analysis, ~80 words): Interpretation of the results, what they mean mechanistically.
+Paragraph 6 (conclusion, ~70 words): Broader implications or next steps.
+Topics allowed: general chemistry, organic chemistry, biochemistry, thermodynamics, electrochemistry, acid-base, kinetics, optics, fluid dynamics, spectroscopy.
+PROHIBITED: clinical patient cases, diagnosis, treatment, symptoms.`,
+    questionInstructions: `Questions must combine passage data with outside MCAT chemistry/physics knowledge. Include quantitative reasoning. Use stems: "Which of the following best explains...", "The researcher would most likely conclude...", "If X were changed to Y, the result would most likely be..."`
   },
   CARS: {
     label: "Critical Analysis and Reasoning Skills (CARS)",
     passageLabel: "CARS Passage",
-    passageInstructions: `Write a 400-600 word CARS passage. This is a HUMANITIES or SOCIAL SCIENCE argumentative essay — NOT a science passage, NOT a clinical case, NOT a research experiment.
-Choose ONE of these topic areas:
-- Philosophy or ethics (e.g., moral theory, justice, epistemology)
-- History or cultural analysis (e.g., historical movement, cultural shift)
-- Art, literature, or music criticism (e.g., analysis of a genre or movement)
-- Sociology or anthropology (e.g., social structures, cultural identity)
-- Economics or political science (e.g., policy argument, economic theory)
-
-The passage must:
-- Present an author's clear argument or thesis
-- Include supporting evidence, counterarguments, and rhetorical moves
-- Be written in dense formal academic prose
-- Have multiple paragraphs with developed reasoning
-- CONTAIN ZERO science, medicine, biology, chemistry, or physics content`,
-    questionInstructions: `Questions must test ONLY critical analysis and reasoning — never factual science recall. Use these AAMC CARS stems:
-- "The author's primary purpose in this passage is..."
-- "Which of the following most undermines the author's argument?"
-- "The author mentions X primarily in order to..."
-- "Based on the passage, the author would most likely agree that..."
-- "The central claim of the passage is best described as..."`
+    passageInstructions: `Write a CARS humanities or social science argumentative essay. Cover all of these in separate paragraphs:
+Paragraph 1 (thesis, ~80 words): The author's central argument or claim.
+Paragraph 2 (context, ~80 words): Historical, cultural, or intellectual background supporting the argument.
+Paragraph 3 (evidence 1, ~90 words): First supporting point with examples or evidence.
+Paragraph 4 (evidence 2, ~90 words): Second supporting point, possibly acknowledging a counterargument.
+Paragraph 5 (counterargument response, ~80 words): Author rebutting opposing views.
+Paragraph 6 (conclusion, ~70 words): Restatement of thesis and broader significance.
+Topics allowed: philosophy, ethics, history, art criticism, literature, cultural studies, sociology, economics, political theory.
+STRICTLY PROHIBITED: Any science, medicine, biology, chemistry, physics, clinical content. ZERO science.`,
+    questionInstructions: `Questions must test ONLY critical analysis — never science knowledge. Use CARS stems: "The author's primary purpose is...", "Which most undermines the author's argument?", "The author mentions X primarily to...", "Based on the passage, the author would most likely agree that...", "The central claim is best described as..."`
   },
   BB: {
     label: "Biological and Biochemical Foundations (B/B)",
     passageLabel: "Research Passage",
-    passageInstructions: `Write a 400-600 word biology or biochemistry research experiment passage. Include:
-- Specific experimental conditions, gene names, protein functions, or enzyme activities
-- Measured outcomes (expression levels, activity rates, phenotypes, yields)
-- Detailed methodology and results across multiple paragraphs
-- Background context connecting to broader biological concepts
-Topics: molecular biology, genetics, gene expression, cell signaling, metabolism, enzyme kinetics, physiology, evolution, microbiology, biochemical pathways.
-DO NOT write a clinical patient case.`,
-    questionInstructions: `Questions must combine passage findings with outside MCAT biology/biochemistry knowledge. Include pathway reasoning and molecular mechanism analysis. Use AAMC stems like "Which of the following best explains...", "The researcher would most likely conclude...", "Which finding would most support the hypothesis that..."`
+    passageInstructions: `Write a detailed biology or biochemistry research experiment passage. Cover all of these in separate paragraphs:
+Paragraph 1 (background, ~80 words): Introduce the biological or biochemical concept and its significance.
+Paragraph 2 (context, ~80 words): Prior research, known pathways, or relevant molecular context.
+Paragraph 3 (methods, ~90 words): Experimental design — specific genes, proteins, cell lines, conditions, assays used.
+Paragraph 4 (results, ~90 words): Quantitative or qualitative findings — expression levels, activity, phenotypes.
+Paragraph 5 (analysis, ~80 words): Mechanistic interpretation of results.
+Paragraph 6 (conclusion, ~70 words): Broader biological implications.
+Topics allowed: molecular biology, genetics, gene expression, cell signaling, metabolism, enzyme kinetics, physiology, evolution, microbiology.
+PROHIBITED: clinical patient cases, diagnosis, drug treatment plans.`,
+    questionInstructions: `Questions must combine passage findings with outside MCAT biology/biochemistry knowledge. Include pathway reasoning. Use stems: "Which of the following best explains...", "The researcher would most likely conclude...", "Which finding would most support the hypothesis that..."`
   },
   PS: {
     label: "Psychological, Social, and Biological Foundations of Behavior (P/S)",
     passageLabel: "Study Passage",
-    passageInstructions: `Write a 400-600 word psychology or sociology research study passage. Include:
-- Study design details (participants, conditions, controls, measurements)
-- Quantitative or qualitative findings with specific data
-- Discussion of behavioral or social patterns observed
-- Multiple paragraphs with background theory, methods, results, and interpretation
-Topics: learning and memory, cognition, emotion, motivation, development, social behavior, identity, culture, institutions, research methods, statistics, neuroscience of behavior.`,
-    questionInstructions: `Questions must combine passage findings with outside MCAT psychology/sociology knowledge. Test application of theory, research design critique, and social/behavioral interpretation. Use AAMC stems like "Based on the passage, the researcher would most likely conclude...", "Which of the following theoretical frameworks best explains..."`
+    passageInstructions: `Write a detailed psychology or sociology research study passage. Cover all of these in separate paragraphs:
+Paragraph 1 (background, ~80 words): Introduce the psychological or sociological concept and theoretical context.
+Paragraph 2 (context, ~80 words): Prior research and theoretical frameworks relevant to the study.
+Paragraph 3 (methods, ~90 words): Study design — participant demographics, conditions, variables measured, procedures.
+Paragraph 4 (results, ~90 words): Specific quantitative or qualitative findings with data.
+Paragraph 5 (analysis, ~80 words): Interpretation using psychological or sociological theory.
+Paragraph 6 (conclusion, ~70 words): Broader implications for behavior or society.
+Topics allowed: learning, memory, cognition, emotion, motivation, development, social behavior, identity, culture, institutions, research methods, statistics, neuroscience of behavior.`,
+    questionInstructions: `Questions must combine passage findings with outside MCAT psychology/sociology knowledge. Use stems: "Based on the passage, the researcher would most likely conclude...", "Which theoretical framework best explains...", "The results suggest that..."`
   }
 };
 
@@ -78,43 +69,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const ctx = SECTION_CONTEXT[section] || SECTION_CONTEXT["CP"];
 
-  const systemPrompt = `You are an AAMC MCAT question writer for the ${ctx.label} section. Generate exactly 1 passage with 5 questions. You MUST respond with valid JSON only — no markdown, no extra text.
+  const systemPrompt = `You are an AAMC MCAT question writer for the ${ctx.label} section. Respond with valid JSON only — no markdown, no extra text.
 
-PASSAGE REQUIREMENTS:
+SECTION: ${ctx.label}
+
+=== PASSAGE (WRITE THIS FIRST) ===
 ${ctx.passageInstructions}
 
-QUESTION REQUIREMENTS:
-${ctx.questionInstructions}
+CRITICAL PASSAGE LENGTH RULE: The passage MUST be 400–600 words. You must write SIX full paragraphs as described above. Each paragraph must be 60–100 words. Do not write a short passage — if you count fewer than 400 words, keep writing.
 
-Additional rules:
-- ALL 5 questions reference the SAME passage
-- Wrong answer choices must be plausible — things students who partially understand the concept would choose
-- NEVER reference any figures, graphs, images, tables, or visual aids. Text only.
+=== 5 QUESTIONS ===
+${ctx.questionInstructions}
+- All 5 questions must reference the same passage
+- Distractors must be plausible to students who partially understand the concept
+- NEVER mention figures, graphs, images, tables, or visual aids
 - correctAnswerIndex must be 0, 1, 2, or 3
 
-Return this exact JSON:
+=== JSON OUTPUT ===
 {
   "passageTitle": "Passage 1 (Questions 1–5)",
-  "passage": "full 400-600 word passage text here",
+  "passage": "[SIX PARAGRAPHS, 400-600 WORDS TOTAL]",
   "drills": [
-    {
-      "questionNumber": 1,
-      "question": "question stem",
-      "options": ["A. option", "B. option", "C. option", "D. option"],
-      "correctAnswerIndex": 0,
-      "explanation": "Why the correct answer is right. Why each wrong answer is wrong. Reference specific passage details."
-    },
-    { "questionNumber": 2, "question": "...", "options": ["A.","B.","C.","D."], "correctAnswerIndex": 0, "explanation": "..." },
-    { "questionNumber": 3, "question": "...", "options": ["A.","B.","C.","D."], "correctAnswerIndex": 0, "explanation": "..." },
-    { "questionNumber": 4, "question": "...", "options": ["A.","B.","C.","D."], "correctAnswerIndex": 0, "explanation": "..." },
-    { "questionNumber": 5, "question": "...", "options": ["A.","B.","C.","D."], "correctAnswerIndex": 0, "explanation": "..." }
+    { "questionNumber": 1, "question": "...", "options": ["A. ...", "B. ...", "C. ...", "D. ..."], "correctAnswerIndex": 0, "explanation": "Why correct. Why A wrong. Why B wrong. Why C wrong. Why D wrong." },
+    { "questionNumber": 2, "question": "...", "options": ["A. ...", "B. ...", "C. ...", "D. ..."], "correctAnswerIndex": 1, "explanation": "..." },
+    { "questionNumber": 3, "question": "...", "options": ["A. ...", "B. ...", "C. ...", "D. ..."], "correctAnswerIndex": 2, "explanation": "..." },
+    { "questionNumber": 4, "question": "...", "options": ["A. ...", "B. ...", "C. ...", "D. ..."], "correctAnswerIndex": 3, "explanation": "..." },
+    { "questionNumber": 5, "question": "...", "options": ["A. ...", "B. ...", "C. ...", "D. ..."], "correctAnswerIndex": 0, "explanation": "..." }
   ]
 }`;
 
-  const userPrompt = `Generate a ${ctx.label} passage and 5 questions targeting this micro-skill:
+  const userPrompt = `Write a ${ctx.label} passage and 5 questions for this micro-skill:
 "${microSkillName}" — ${microSkillDescription || ""}
 
-CRITICAL: Follow the passage requirements exactly. The passage MUST be 400-600 words. Return valid JSON only.`;
+REMINDER: The passage must be 400–600 words across SIX paragraphs. Return valid JSON only.`;
 
   try {
     const completion = await groq.chat.completions.create({
@@ -125,6 +112,7 @@ CRITICAL: Follow the passage requirements exactly. The passage MUST be 400-600 w
       ],
       response_format: { type: "json_object" },
       temperature: 0.7,
+      max_tokens: 4000,
     });
 
     res.json(JSON.parse(completion.choices[0].message.content || "{}"));
