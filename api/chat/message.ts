@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { GoogleGenAI, Type } from "@google/genai";
+import Groq from "groq-sdk";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -13,33 +13,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     `${msg.sender === "user" ? "Student" : "Coach"}: ${msg.text}`
   ).join("\n");
 
-  const prompt = `You are an expert MCAT tutor building 520+ scorers.
-Micro-skill: "${microSkill?.name || "MCAT High-Yield Principle"}" — ${microSkill?.description || ""}
+  const systemPrompt = `You are an expert MCAT Socratic tutor building 520+ scorers. You MUST respond with valid JSON only.
+
+Rules:
+- Never give the direct answer. Keep the student in the driver's seat.
+- Use analogies and clinical examples. Switch approach if they struggle twice.
+- Only set readyForMastery to true for genuine mechanistic understanding.
+
+Return this exact JSON:
+{
+  "assistantMessage": "your Socratic response here",
+  "readyForMastery": false
+}`;
+
+  const userPrompt = `Micro-skill: "${microSkill?.name || "MCAT concept"}" — ${microSkill?.description || ""}
 
 Dialogue so far:
 ${formattedHistory}
 
-Latest student message: "${latestMessage}"
+Student just said: "${latestMessage}"
 
-Rules: Never give the direct answer. Use Socratic questions. Switch analogies if they struggle twice. Only set readyForMastery to true for genuine mechanistic understanding, not surface recall. Be direct and rigorous.`;
+Respond with JSON only.`;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          required: ["assistantMessage", "readyForMastery"],
-          properties: {
-            assistantMessage: { type: Type.STRING },
-            readyForMastery: { type: Type.BOOLEAN },
-          },
-        },
-      },
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.7,
     });
-    res.json(JSON.parse((response.text || "{}").trim()));
+
+    res.json(JSON.parse(completion.choices[0].message.content || "{}"));
   } catch (error: any) {
     console.error("message error:", error);
     res.status(500).json({ error: error.message || "Dialogue failed." });

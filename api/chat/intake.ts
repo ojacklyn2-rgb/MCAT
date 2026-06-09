@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { GoogleGenAI, Type } from "@google/genai";
+import Groq from "groq-sdk";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 function parseBase64Image(dataUrl: string) {
   const matches = dataUrl.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
@@ -15,47 +15,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { text, image } = req.body;
   if (!text && !image) return res.status(400).json({ error: "Either wrong question text or screenshot is required." });
 
-  let contents: any[] = [];
-  if (image) {
-    const imgData = parseBase64Image(image);
-    if (imgData) contents.push({ inlineData: { mimeType: imgData.mimeType, data: imgData.data } });
-  }
+  const systemPrompt = `You are an expert MCAT tutor building 520+ scorers. You MUST respond with valid JSON only — no markdown, no extra text.
 
-  const promptText = `You are an expert MCAT tutor and learning coach. The student is aiming for a 520+ MCAT.
+When analyzing a student's wrong answer, return this exact JSON structure:
+{
+  "microSkillName": "specific 6-7 word micro-skill name",
+  "microSkillDescription": "what the micro-skill is and why students struggle",
+  "broadTopic": "MCAT section - Topic (e.g. Chemistry/Physics - Electrochemistry)",
+  "conceptSummary": "plain language explanation with analogy, then layered complexity",
+  "socraticOpener": "first Socratic question to probe their understanding - do NOT reveal the answer"
+}`;
 
-The student has submitted a question they got wrong (their notes/context: "${text || "No additional context provided"}").
+  const userPrompt = `The student got this wrong: "${text || "See image context"}"
 
-STEP 1 — ERROR ANALYSIS:
-1. Identify the MCAT section (C/P, CARS, B/B, P/S).
-2. Identify the EXACT micro-skill being tested — not the broad topic.
-3. State WHY the student likely missed it — be brutally specific.
-4. Explain the concept in plain language first, then layer complexity. Use analogies and clinical examples.
-5. End with a Socratic question. Do NOT reveal the correct answer.
-
-Return strictly in the requested JSON format.`;
-
-  contents.push({ text: promptText });
+Identify the MCAT section, the exact micro-skill gap (not the broad topic), why they likely missed it, and open a Socratic dialogue. Return valid JSON only.`;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          required: ["microSkillName", "microSkillDescription", "broadTopic", "conceptSummary", "socraticOpener"],
-          properties: {
-            microSkillName: { type: Type.STRING },
-            microSkillDescription: { type: Type.STRING },
-            broadTopic: { type: Type.STRING },
-            conceptSummary: { type: Type.STRING },
-            socraticOpener: { type: Type.STRING },
-          },
-        },
-      },
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.7,
     });
-    res.json(JSON.parse((response.text || "{}").trim()));
+
+    const result = JSON.parse(completion.choices[0].message.content || "{}");
+    res.json(result);
   } catch (error: any) {
     console.error("intake error:", error);
     res.status(500).json({ error: error.message || "Intake analysis failed." });

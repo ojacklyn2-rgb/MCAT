@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { GoogleGenAI, Type } from "@google/genai";
+import Groq from "groq-sdk";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -14,41 +14,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     `${i + 1}. "${s.name}" — ${s.description}`
   ).join("\n");
 
-  const prompt = `Generate EXACTLY 5 interleaved 520+ MCAT questions from these mastered concepts:
+  const systemPrompt = `You are an expert MCAT tutor. Generate exactly 5 interleaved questions. You MUST respond with valid JSON only.
+
+Return this exact JSON:
+{
+  "questions": [
+    {
+      "microSkill": "name of skill tested",
+      "passage": "clinical or experimental scenario",
+      "question": "the question",
+      "options": ["A. option", "B. option", "C. option", "D. option"],
+      "correctAnswerIndex": 0,
+      "explanation": "why correct is right and why each wrong answer is wrong"
+    }
+  ]
+}`;
+
+  const userPrompt = `Generate 5 interleaved 520+ MCAT questions from:
 ${skillsListStr}
 
-Rules: Mix topics — never two consecutive questions from the same skill. Clinical/experimental difficulty. Explain why each wrong answer is wrong.`;
+Never two consecutive questions from the same skill. Clinical/experimental difficulty. Return JSON only.`;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          required: ["questions"],
-          properties: {
-            questions: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                required: ["microSkill", "passage", "question", "options", "correctAnswerIndex", "explanation"],
-                properties: {
-                  microSkill: { type: Type.STRING },
-                  passage: { type: Type.STRING },
-                  question: { type: Type.STRING },
-                  options: { type: Type.ARRAY, items: { type: Type.STRING } },
-                  correctAnswerIndex: { type: Type.INTEGER },
-                  explanation: { type: Type.STRING },
-                },
-              },
-            },
-          },
-        },
-      },
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.8,
     });
-    res.json(JSON.parse((response.text || "{}").trim()));
+
+    res.json(JSON.parse(completion.choices[0].message.content || "{}"));
   } catch (error: any) {
     console.error("quiz error:", error);
     res.status(500).json({ error: error.message || "Quiz generation failed." });

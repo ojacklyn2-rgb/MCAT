@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { GoogleGenAI, Type } from "@google/genai";
+import Groq from "groq-sdk";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -9,32 +9,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { explanation, microSkillName, microSkillDescription } = req.body;
   if (!explanation) return res.status(400).json({ error: "Missing explanation text." });
 
-  const prompt = `You are a strict MCAT judge. Student aims for 520+.
-Micro-Skill: "${microSkillName}" — ${microSkillDescription || ""}
-Student's Explanation: "${explanation}"
+  const systemPrompt = `You are a strict MCAT judge evaluating a 520+ student. You MUST respond with valid JSON only.
 
-Evaluate strictly:
-- Incomplete/incorrect → isAccurate = false, state exactly what's missing.
-- Surface-level only → isAccurate = false, push deeper with a hard follow-up.
-- Only isAccurate = true for genuine mechanistic understanding.`;
+Return this exact JSON:
+{
+  "isAccurate": true or false,
+  "critique": "direct 2-3 sentence feedback"
+}
+
+Be strict: surface recall = false. Only true for genuine mechanistic understanding.`;
+
+  const userPrompt = `Micro-Skill: "${microSkillName}" — ${microSkillDescription || ""}
+Student's explanation: "${explanation}"
+
+Is this mechanistically accurate and complete? Return JSON only.`;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          required: ["isAccurate", "critique"],
-          properties: {
-            isAccurate: { type: Type.BOOLEAN },
-            critique: { type: Type.STRING },
-          },
-        },
-      },
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.3,
     });
-    res.json(JSON.parse((response.text || "{}").trim()));
+
+    res.json(JSON.parse(completion.choices[0].message.content || "{}"));
   } catch (error: any) {
     console.error("verify error:", error);
     res.status(500).json({ error: error.message || "Verification failed." });
