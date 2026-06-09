@@ -552,12 +552,28 @@ export function ActiveChatSession({
         {/* ==================== STAGE 2: SOCRATIC CHAT ==================== */}
         {session.stage === 'socratic' && (
           <div className="flex flex-col space-y-4" id="socratic-chat-section">
-            
-            {/* Scrollable chat history */}
-            <div className="bg-white border border-[#e4e4e3] p-4 rounded-md h-[450px] overflow-y-auto flex flex-col space-y-3.5" id="chat-messages-box">
+
+            {/* Concept Explanation Card — shown immediately on intake */}
+            {session.conceptSummary && (
+              <div className="bg-[#fffdf5] border border-[#e8e0c0] rounded-md p-4 space-y-2" id="concept-explanation-card">
+                <div className="flex items-center gap-2 pb-1.5 border-b border-[#e8e0c0]">
+                  <BookOpen size={13} className="text-amber-700 shrink-0" />
+                  <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider">Concept Gap Identified — {session.microSkill?.broadTopic}</span>
+                </div>
+                <h3 className="font-bold text-[#37352f] text-xs">{session.microSkill?.name}</h3>
+                <p className="text-xs text-[#37352f]/80 leading-relaxed whitespace-pre-line">{session.conceptSummary}</p>
+              </div>
+            )}
+
+            {/* Scrollable chat history — Socratic dialogue only */}
+            <div className="bg-white border border-[#e4e4e3] p-4 rounded-md h-[380px] overflow-y-auto flex flex-col space-y-3.5" id="chat-messages-box">
               {session.messages.map((msg) => {
                 const isAsst = msg.sender === 'assistant';
-                
+                // For the first assistant message, only show the socratic question part (skip concept summary already shown above)
+                const displayText = isAsst && msg.text.includes('Diagnostic Socratic Question:')
+                  ? msg.text.split('**Diagnostic Socratic Question:**').pop()?.trim() || msg.text
+                  : msg.text;
+
                 return (
                   <div
                     key={msg.id}
@@ -568,23 +584,17 @@ export function ActiveChatSession({
                       isAsst ? 'bg-[#f7f7f5] border-[#e4e4e3] text-[#37352f]' : 'bg-[#efeee3] border-[#e4e4e3] text-[#37352f] font-medium'
                     }`} id={`message-content-${msg.id}`}>
                       {isAsst ? (
-                        // Basic custom rendering for markdown lines
                         <div className="space-y-2 whitespace-pre-wrap">
-                          {msg.text.split('\n\n').map((paragraph, pIdx) => {
-                            if (paragraph.startsWith('**') && paragraph.endsWith('**')) {
-                              return <h4 key={pIdx} className="font-bold text-[#37352f] flex items-center gap-1.5">{paragraph.replace(/\*\*/g, '')}</h4>;
-                            }
-                            // highlights bold words
-                            const markedText = paragraph.split('**').map((tok, tIdx) => {
-                              return tIdx % 2 === 1 ? <strong key={tIdx} className="font-bold text-zinc-950">{tok}</strong> : tok;
-                            });
+                          {displayText.split('\n\n').map((paragraph, pIdx) => {
+                            const markedText = paragraph.split('**').map((tok, tIdx) => (
+                              tIdx % 2 === 1 ? <strong key={tIdx} className="font-bold text-zinc-950">{tok}</strong> : tok
+                            ));
                             return <p key={pIdx} className="text-[#37352f]/90 leading-relaxed text-xs sm:text-sm">{markedText}</p>;
                           })}
                         </div>
                       ) : (
                         <p className="whitespace-pre-wrap text-xs sm:text-sm">{msg.text}</p>
                       )}
-                      
                       <div className={`text-[9px] mt-1 font-sans ${isAsst ? 'text-[#37352f]/45' : 'text-[#37352f]/50 text-right'}`}>
                         {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </div>
@@ -601,7 +611,7 @@ export function ActiveChatSession({
                 type="text"
                 value={messageText}
                 onChange={(e) => setMessageText(e.target.value)}
-                placeholder="Type your explanation, respond to the Socratic challenge..."
+                placeholder="Respond to the Socratic question, explain your thinking..."
                 className="flex-1 p-2.5 border border-[#e4e4e3] rounded font-sans text-xs focus:outline-none focus:border-zinc-400 bg-white"
                 id="chat-input-field"
               />
@@ -622,7 +632,7 @@ export function ActiveChatSession({
                 <div className="space-y-0.5">
                   <h4 className="font-bold text-[#37352f] font-sans text-xs">Ready for Active Rigor?</h4>
                   <p className="text-[11px] text-[#37352f]/60 font-sans">
-                    Once you've aligned the concept variables with the Coach, lock in understanding by starting the 3-streak drills.
+                    Once you've aligned the concept with the Coach, lock in understanding with 3-streak drills.
                   </p>
                 </div>
               </div>
@@ -683,6 +693,13 @@ export function ActiveChatSession({
                         <FileText size={11} /> CLINICAL PASSAGE / EXPERIMENT PROTOCOL
                       </span>
                       <p className="leading-normal">{currentDrill.passage}</p>
+                    </div>
+                  )}
+
+                  {/* Figure placeholder if question references a graph/figure */}
+                  {/figure|graph|chart|table|shown below|diagram|plot|curve/i.test((currentDrill.passage || '') + currentDrill.question) && (
+                    <div className="border border-dashed border-[#c0b8a0] bg-[#fafaf7] rounded p-3 text-center text-[11px] text-[#37352f]/50 font-sans italic" id="figure-placeholder">
+                      [ Figure referenced in this question — not shown. Use the passage context and your knowledge to answer. ]
                     </div>
                   )}
 
@@ -987,22 +1004,21 @@ export function ActiveChatSession({
           </div>
         )}
 
-        {/* Uploaded Incorrect Question Preview */}
+        {/* Uploaded Incorrect Question Preview — compact thumbnail */}
         {session.errorInputImage && (
-          <div className="bg-white border border-[#e4e4e3] rounded-md p-4 space-y-2 shadow-[0_1px_2px_rgba(15,15,15,0.03)]" id="side-screenshot-panel">
-            <span className="font-semibold text-[#37352f]/50 block uppercase tracking-wider text-[8px] font-sans">Source Error Screenshot</span>
+          <div className="bg-white border border-[#e4e4e3] rounded-md p-3 space-y-2 shadow-[0_1px_2px_rgba(15,15,15,0.03)]" id="side-screenshot-panel">
+            <span className="font-semibold text-[#37352f]/50 block uppercase tracking-wider text-[8px] font-sans">Source Question</span>
             <img
               src={session.errorInputImage}
               alt="Source Question"
-              className="w-full rounded border border-[#e4e4e3] shadow-xs cursor-zoom-in hover:opacity-95 transition-opacity"
+              className="w-full max-h-36 object-cover object-top rounded border border-[#e4e4e3] cursor-zoom-in hover:opacity-90 transition-opacity"
               onClick={() => {
                 const w = window.open();
-                if (w) {
-                  w.document.write(`<img src="${session.errorInputImage}" style="max-width:100%; height:auto;" />`);
-                }
+                if (w) w.document.write(`<img src="${session.errorInputImage}" style="max-width:100%;height:auto;" />`);
               }}
-              title="Click to view full-size image"
+              title="Click to view full size"
             />
+            <p className="text-[9px] text-[#37352f]/40 font-sans text-center">Click to expand</p>
           </div>
         )}
       </div>
