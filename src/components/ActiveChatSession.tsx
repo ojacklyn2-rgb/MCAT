@@ -365,11 +365,52 @@ export function ActiveChatSession({
     const isLastQuestion = nextIdx >= session.drills.length;
 
     if (isLastQuestion) {
-      // Finished all questions in the set — advance to flashcard
-      if (session.microSkill) {
-        onUpdateMicroSkill({ ...session.microSkill, masteredAt: Date.now() });
+      // Check 80% threshold on the completed set
+      const setSize = session.drills.length;
+      const setHistory = session.drillHistory.slice(-setSize);
+      const correctCount = setHistory.filter(h => h.correct).length;
+
+      if (correctCount / setSize >= 0.8) {
+        if (session.microSkill) {
+          onUpdateMicroSkill({ ...session.microSkill, masteredAt: Date.now() });
+        }
+        onUpdateSession({ ...session, stage: 'flashcard' });
+      } else {
+        // Below 80% — generate a new passage set
+        setIsLoading(true);
+        setLoadingStep(`${correctCount}/${setSize} correct — need 80%. Generating a new passage set...`);
+        try {
+          const response = await fetch('/api/chat/generate-drills', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              microSkillName: session.microSkill?.name,
+              microSkillDescription: session.microSkill?.description,
+              section: session.section || 'CP'
+            })
+          });
+          if (!response.ok) throw new Error('Failed generating fresh drills.');
+          const data = await response.json();
+          const drills = (data.drills || []).map((d: any, i: number) => ({
+            ...d,
+            id: d.id || `drill_${Date.now()}_${i}`,
+            microSkill: session.microSkill?.name || ''
+          }));
+          onUpdateSession({
+            ...session,
+            drills,
+            drillPassage: data.passage || '',
+            drillPassageTitle: data.passageTitle || 'New Passage',
+            drillStreak: 0
+          });
+          setActiveDrillIndex(0);
+        } catch (err: any) {
+          alert(err.message);
+        } finally {
+          setIsLoading(false);
+          setLoadingStep('');
+        }
       }
-      onUpdateSession({ ...session, stage: 'flashcard' });
     } else {
       setActiveDrillIndex(nextIdx);
     }
@@ -699,8 +740,8 @@ export function ActiveChatSession({
                 <span className="text-[10px] opacity-50">|</span>
                 <span className="text-[10px] opacity-70">Q {activeDrillIndex + 1} of {session.drills.length}</span>
                 <span className="text-[10px] opacity-50">·</span>
-                <span className="text-[10px] text-white/60 font-mono">
-                  {session.drillStreak}/{session.drills.length} correct
+                <span className={`text-[10px] font-mono ${session.drillStreak / session.drills.length >= 0.8 ? 'text-[#2ebd6e]' : 'text-white/60'}`}>
+                  {session.drillStreak}/{session.drills.length} correct · need ≥80%
                 </span>
               </div>
               {!hasSubmittedAnswer && (
@@ -779,7 +820,7 @@ export function ActiveChatSession({
                       ) : (
                         <button type="button" onClick={handleNextDrill}
                           className="px-5 py-2 bg-[#37352f] hover:bg-[#2c2b27] text-white rounded font-sans text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-all">
-                          {activeDrillIndex + 1 >= session.drills.length ? 'Complete Set → Build Flashcard' : 'Next Question'} <ArrowRight size={11} />
+                          {activeDrillIndex + 1 >= session.drills.length ? 'Finish Set' : 'Next Question'} <ArrowRight size={11} />
                         </button>
                       )}
                     </div>
