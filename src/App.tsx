@@ -1,10 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { ChatSession, Flashcard, MicroSkill } from './types';
+import { ChatSession, Flashcard, MicroSkill, MCATSection } from './types';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 import { ActiveChatSession } from './components/ActiveChatSession';
 import { SpacedRepetitionDeck } from './components/SpacedRepetitionDeck';
 import { InterleavingQuizRunner } from './components/InterleavingQuizRunner';
-import { BookOpen, Layers, Sparkles, MessageSquare, Plus, PenTool, Trash2, Award, LogOut, LayoutDashboard } from 'lucide-react';
+import { BookOpen, Layers, Sparkles, MessageSquare, Plus, PenTool, Trash2, Award, LogOut, LayoutDashboard, X } from 'lucide-react';
+
+const SECTION_INFO: { id: MCATSection; label: string; sub: string; color: string }[] = [
+  { id: 'CP', label: 'Chem/Phys', sub: 'C/P — General Chem, Org Chem, Physics, Biochem', color: 'bg-blue-50 border-blue-200 text-blue-800' },
+  { id: 'CARS', label: 'CARS', sub: 'Critical Analysis & Reasoning Skills', color: 'bg-purple-50 border-purple-200 text-purple-800' },
+  { id: 'BB', label: 'Bio/Biochem', sub: 'B/B — Molecular Bio, Genetics, Physiology', color: 'bg-green-50 border-green-200 text-green-800' },
+  { id: 'PS', label: 'Psych/Soc', sub: 'P/S — Psychology, Sociology, Behavior', color: 'bg-amber-50 border-amber-200 text-amber-800' },
+];
 
 // Seeding standard initial data if local storage is clean
 const SEED_MICRO_SKILLS: MicroSkill[] = [
@@ -58,6 +65,9 @@ export default function App() {
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
   const [microSkills, setMicroSkills] = useState<MicroSkill[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string>('');
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newSessionTitle, setNewSessionTitle] = useState('');
+  const [newSessionSection, setNewSessionSection] = useState<MCATSection>('CP');
 
   // 1. Initial State Load from Local Storage
   useEffect(() => {
@@ -130,13 +140,19 @@ export default function App() {
 
   // 4. Session Action Managers
   const handleCreateSession = () => {
-    const title = prompt('Name this study session (e.g. "Acid/Base pH Errors"):');
-    if (title === null) return; // user cancelled
+    setNewSessionTitle('');
+    setNewSessionSection('CP');
+    setShowCreateModal(true);
+    setActiveTab('sessions');
+  };
+
+  const handleConfirmCreateSession = () => {
     const newId = `session_${Date.now()}`;
     const newSession: ChatSession = {
       id: newId,
-      title: title.trim() || `Study Session #${sessions.length + 1}`,
+      title: newSessionTitle.trim() || `Study Session #${sessions.length + 1}`,
       createdAt: Date.now(),
+      section: newSessionSection,
       stage: 'intake',
       messages: [],
       drills: [],
@@ -145,7 +161,7 @@ export default function App() {
     };
     setSessions([newSession, ...sessions]);
     setActiveSessionId(newId);
-    setActiveTab('sessions');
+    setShowCreateModal(false);
   };
 
   const handleRenameSession = (id: string) => {
@@ -325,7 +341,7 @@ export default function App() {
                           <MessageSquare size={12} className="text-[#37352f]/40 shrink-0" />
                           <div className="truncate">
                             <span className="text-[9px] text-[#37352f]/40 font-sans uppercase block tracking-wider font-semibold">
-                              {item.stage}
+                              {item.section ? `${item.section} · ` : ''}{item.stage}
                             </span>
                             <span
                               className="text-xs truncate font-sans block font-semibold hover:text-[#37352f] cursor-text"
@@ -398,6 +414,56 @@ export default function App() {
         )}
 
       </main>
+
+      {/* Create Session Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowCreateModal(false)}>
+          <div className="bg-white rounded-lg border border-[#e4e4e3] shadow-xl w-full max-w-md p-6 space-y-5" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-start">
+              <div>
+                <h3 className="font-bold text-[#37352f] text-sm">New Study Session</h3>
+                <p className="text-[11px] text-[#37352f]/50 mt-0.5">Choose your MCAT section and name your session.</p>
+              </div>
+              <button onClick={() => setShowCreateModal(false)} className="p-1 rounded hover:bg-[#f1f1ef] text-[#37352f]/50 cursor-pointer"><X size={14} /></button>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-[#37352f]/60 uppercase tracking-wider block">Session Name</label>
+              <input
+                autoFocus
+                type="text"
+                value={newSessionTitle}
+                onChange={e => setNewSessionTitle(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleConfirmCreateSession()}
+                placeholder='e.g. "Acid/Base pH Errors"'
+                className="w-full p-2.5 border border-[#e4e4e3] rounded text-xs font-sans focus:outline-none focus:border-zinc-400"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold text-[#37352f]/60 uppercase tracking-wider block">MCAT Section</label>
+              <div className="grid grid-cols-2 gap-2">
+                {SECTION_INFO.map(sec => (
+                  <button key={sec.id} type="button" onClick={() => setNewSessionSection(sec.id)}
+                    className={`p-3 border rounded-md text-left transition-all cursor-pointer ${
+                      newSessionSection === sec.id
+                        ? sec.color + ' border-current font-semibold'
+                        : 'bg-white border-[#e4e4e3] text-[#37352f]/60 hover:bg-[#f7f7f5]'
+                    }`}>
+                    <div className="font-bold text-xs">{sec.label}</div>
+                    <div className="text-[10px] mt-0.5 leading-tight opacity-70">{sec.sub.split(' — ')[1] || sec.sub}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <button onClick={handleConfirmCreateSession}
+              className="w-full py-2 bg-[#37352f] hover:bg-[#2c2b27] text-white rounded font-sans text-xs font-semibold transition cursor-pointer">
+              Create Session
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Minimal Academic Footer */}
       <footer className="bg-[#f7f7f5] border-t border-[#e4e4e3] py-4 text-center text-[10px] text-[#37352f]/50 font-sans" id="footer-branding">

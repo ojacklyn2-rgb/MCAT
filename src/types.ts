@@ -29,10 +29,13 @@ export interface MicroSkill {
   unresolvedCount: number; // number of times flagged
 }
 
+export type MCATSection = 'CP' | 'CARS' | 'BB' | 'PS';
+
 export interface ChatSession {
   id: string;
   title: string;
   createdAt: number;
+  section?: MCATSection;
   stage: 'intake' | 'socratic' | 'mastery' | 'flashcard' | 'completed';
   microSkill?: MicroSkill;
   conceptSummary?: string;
