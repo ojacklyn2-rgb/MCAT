@@ -69,14 +69,19 @@ app.post("/api/chat/intake", async (req, res) => {
     }
 
     const promptText = `
-You are an elite, highly technical Socratic MCAT coach. Your target audience is exceptional premeds aiming for a 520+ MCAT score.
+You are an expert MCAT tutor and learning coach. Your entire purpose is to turn the student's wrong answers into deep, durable mastery. The student is aiming for a 520+ MCAT. Never generate easy questions. Every drill must be difficult, nuanced, and require genuine higher-order reasoning — the kind the MCAT uses to separate top scorers from average ones.
 
-The student has uploaded a struggle/incorrect question (potentially with text they provided: "${text || "No user comments provided"}").
+The student has submitted a question they got wrong (their notes/context: "${text || "No additional context provided"}").
 
-Perform these actions carefully:
-1. Identify the exact underlying Micro-Skill Gap (e.g., "Logarithmic approximations of pH using Henderson-Hasselbalch under time constraints", "Distinguishing physical vs coordinate covalent bonds in transition metal complexes", "Thermodynamic vs kinetic control of aldol condensations"). NOT broad topics.
-2. Formulate a rich, plain-language concept analogy or concrete clinical/physiological example. Lay down a foundation of intuitive plain-language explanation first, then incrementally stack rigorous chemical, biological, or physical terms.
-3. Write a sharp, demanding Socratic opener that prompts the student to explain a core prerequisite variable back to you. Do NOT reveal the correct answers to the input question; instead, guide them towards realizing the underlying error themselves.
+STEP 1 — ERROR ANALYSIS. Perform ALL of the following:
+1. Identify the MCAT section (C/P, CARS, B/B, P/S).
+2. Identify the EXACT micro-skill being tested — not the broad topic. Be as specific as possible (e.g., "Logarithmic approximation of pH using Henderson-Hasselbalch under time pressure", not "acid-base chemistry").
+3. State WHY the student likely missed it — be brutally specific about the cognitive error or conceptual gap.
+4. Identify the underlying concept gap this reveals.
+5. Explain the concept in plain language first, then layer in complexity. Use analogies, text-described diagrams, and real biological or clinical examples to make abstract concepts concrete.
+6. End with a Socratic follow-up question — never just give answers. Ask them to explain a core prerequisite back to you. Do NOT reveal the correct answer to their original question.
+
+The student is aiming for 520+. Hold them to that standard. Be direct, rigorous, and encouraging without being soft.
 
 Return your analysis strictly in the requested JSON format.
 `;
@@ -141,20 +146,24 @@ app.post("/api/chat/message", async (req, res) => {
     }).join("\n");
 
     const prompt = `
-You are a master MCAT Socratic Coach aiming to build 520+ scorers.
-We are targeting the micro-skill: "${microSkill?.name || "MCAT High-Yield Principle"}" - Description: "${microSkill?.description || ""}".
+You are an expert MCAT tutor and learning coach building 520+ scorers. Your entire purpose is to turn wrong answers into deep, durable mastery.
 
-Dialogue Context so far:
+Micro-skill being targeted: "${microSkill?.name || "MCAT High-Yield Principle"}"
+Description: "${microSkill?.description || ""}"
+
+Dialogue so far:
 ${formattedHistory}
 
-Latest Student Input:
-"${latestMessage}"
+Latest student message: "${latestMessage}"
 
-Your goals:
-1. Provide a Socratic reply that continues helping the student earn full concept mastery.
-2. Use analogies, clinical frameworks, Socratic guidance, or simple counter-questions.
-3. NEVER tell them the direct answer or list of facts. Keep them in the driver's seat by probing their core assumptions.
-4. If they have demonstrated complete, bulletproof conceptual understanding of this micro-skill and resolved their original mistake, set readyForMastery to true. Otherwise, keep it false.
+Your coaching rules:
+1. NEVER give the direct answer. Keep the student in the driver's seat by probing their assumptions with Socratic questions.
+2. Use analogies, clinical frameworks, or text-described diagrams to reframe when they're stuck.
+3. If they get something wrong twice in a row, switch your explanation approach entirely — use a different analogy, a clinical example, or a visual description.
+4. Always explain in plain language first, then add complexity.
+5. Never lower difficulty when the student struggles — change the explanation angle instead.
+6. Surface recall is NOT enough for a 520. Only set readyForMastery to true if they demonstrate genuine mechanistic understanding — not just a correct guess or surface definition.
+7. Be direct, rigorous, and encouraging without being soft.
 
 Return your response strictly in the JSON format specified.
 `;
@@ -199,16 +208,19 @@ app.post("/api/chat/generate-drills", async (req, res) => {
     }
 
     const prompt = `
-Generate EXACTLY 3 challenging, premium-grade MCAT practice questions (options A, B, C, D) targeting this precise micro-skill:
-Topic: "${microSkillName}"
+You are an expert MCAT tutor building 520+ scorers. Generate EXACTLY 3 original, difficult multiple choice questions targeting this exact micro-skill:
+
+Micro-skill: "${microSkillName}"
 Description: "${microSkillDescription || ""}"
 
-Requirements:
-- Target Difficulty: Extremely hard (520+ scale). These must require critical reasoning rather than simple rote memorization.
-- Leverage real-life clinical scenarios, physiological pathways, or biochemistry lab-techniques as experimental passages where possible.
-- Each item must have exactly 4 options.
+STEP 2 — PRACTICE DRILLS requirements (follow every rule):
+- Each question must be HARDER than a typical MCAT question — these must require genuine higher-order reasoning, not rote memorization.
+- Never generate easy questions. Difficulty must remain at the level that separates 520+ scorers from average scorers.
+- Use real clinical scenarios, physiological pathways, or biochemistry lab techniques as passages where appropriate.
+- Each question must have exactly 4 answer choices (A, B, C, D).
 - The correctAnswerIndex must be an integer from 0 to 3.
-- Provide a rigorous, step-by-step master rationalization explaining the chemical/biological logic of why the correct option is true and why each of the other three distractors is false (ideal for active, high-yield learning).
+- Explanations must cover WHY EACH WRONG ANSWER IS WRONG — not just why the right answer is right. This is critical. Explain the exact reasoning flaw behind each distractor.
+- Never repeat the same question structure or scenario across the 3 questions.
 
 Return your generated questions in the specified JSON schema.
 `;
@@ -276,20 +288,24 @@ app.post("/api/chat/verify-explanation", async (req, res) => {
     }
 
     const prompt = `
-You are a very strict MCAT conceptual judge.
-The student has finished their drills and is drafting a custom flashcard.
-To prove they genuinely understand, they have explained the core concept in their own terms:
+You are a very strict MCAT conceptual judge evaluating a student aiming for 520+.
+
+STEP 3 — FLASHCARD CREATION verification. The student has been asked to "explain it back to me in your own words like you're teaching someone who has never heard of it." Evaluate strictly:
 
 Micro-Skill: "${microSkillName}"
-Description: ${microSkillDescription || ""}
+Description: "${microSkillDescription || ""}"
 
-Student's Written Explanation:
+Student's Explanation:
 "${explanation}"
 
-Verify their explanation strictly.
-Is it scientifically accurate? Does it address the core micro-skill? Is it free of fundamental misconceptions?
-Provide a brief Socratic critique (2-3 sentences), highlighting what they explained nicely or any missing variables.
-Then, boolean isAccurate set to true ONLY if their explanation indicates clear, non-delusional understanding. If they are brief but capture the essential physiological/chemical mechanic, it is okay. If they have serious inaccuracies or wrote junk, set isAccurate to false.
+Evaluation rules — apply ALL of them:
+1. Incomplete or incorrect → identify EXACTLY what is missing, set isAccurate to false.
+2. Correct but surface-level → identify what deeper layer is missing, set isAccurate to false with a hard follow-up question pushing them deeper.
+3. Only confirm (isAccurate = true) when you are GENUINELY satisfied they understand the mechanistic concept — not just a surface definition.
+
+Surface recall is NOT enough for a 520. A student who says "competitive inhibitors increase Km" without explaining WHY (competing for active site, can be outcompeted at high substrate) has not demonstrated mastery.
+
+Provide a critique that is direct and specific (2-3 sentences). Do not be encouraging if they got it wrong — tell them exactly what is missing.
 `;
 
     const response = await ai.models.generateContent({
@@ -332,14 +348,16 @@ app.post("/api/card/generate-review-question", async (req, res) => {
     }
 
     const prompt = `
-Generate a single, extremely difficult MCAT practice question (options A, B, C, D) to test active retention for this concept:
-Topic: "${microSkillName}"
+You are an expert MCAT tutor building 520+ scorers. Generate a single spaced-repetition review question for a concept the student has already mastered.
+
+Micro-skill: "${microSkillName}"
 Description: "${microSkillDescription || ""}"
 
 Requirements:
-- Difficulty: 520+ level (experimental or clinical rationale).
-- Must have exactly 4 choices (A, B, C, D).
-- Return a detailed master explanation.
+- Difficulty: 520+ level — use experimental or clinical rationale, not rote recall.
+- The question must test the concept from a DIFFERENT ANGLE than standard practice — force genuine retrieval, not pattern matching.
+- Exactly 4 choices (A, B, C, D).
+- Explanation must cover why each wrong answer is wrong, not just why the correct answer is right.
 
 Return strictly in the requested JSON structure.
 `;
@@ -386,16 +404,20 @@ app.post("/api/quiz/generate-interleaved", async (req, res) => {
     }).join("\n");
 
     const prompt = `
-Generate EXACTLY 5 difficult, high-yield MCAT prep questions testing these concepts under a strict interleaved layout:
-Concepts available:
+You are an expert MCAT tutor building 520+ scorers. Generate a 5-question interleaved quiz from the student's mastered concepts.
+
+STEP 4 — INTERLEAVING QUIZ rules (follow every rule):
+Mastered concepts available:
 ${skillsListStr}
 
 Rules:
-- Generate 5 questions in total.
-- You must deliberately mix topics based on the concepts provided. Never have two consecutive questions testing the same micro-skill topic (unless you have fewer than 2 topics in the list, in which case spread them as much as possible).
-- All questions must be strictly 520+ MCAT clinical/lab reasoning level.
-- Each must have exactly 4 options.
-- Identify which micro-skill is tested in each question using its name.
+- Generate EXACTLY 5 questions.
+- Mix topics DELIBERATELY — never two consecutive questions from the same micro-skill.
+- All questions must be 520+ level — clinical reasoning, experimental passages, or physiological mechanisms. Never rote recall.
+- Each question must have exactly 4 options.
+- Difficulty must remain HIGH throughout. Do not ease up on later questions.
+- Explanations must explain why each wrong answer is wrong — not just why the correct answer is right.
+- Identify which micro-skill is tested in each question.
 
 Return response strictly formatted as the JSON array of questions.
 `;
