@@ -36,6 +36,17 @@ export function ActiveChatSession({
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [hasSubmittedAnswer, setHasSubmittedAnswer] = useState(false);
 
+  // Timer state
+  const QUESTION_TIME = 90; // seconds per question
+  const [timeLeft, setTimeLeft] = useState(QUESTION_TIME);
+  const [timerExpired, setTimerExpired] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Post-answer discussion chat
+  const [drillChatText, setDrillChatText] = useState('');
+  const [drillChatMessages, setDrillChatMessages] = useState<{role: 'user'|'ai', text: string}[]>([]);
+  const [isDrillChatLoading, setIsDrillChatLoading] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -43,6 +54,70 @@ export function ActiveChatSession({
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [session.messages]);
+
+  // Timer: reset and start on each new drill question
+  useEffect(() => {
+    if (session.stage !== 'mastery' || hasSubmittedAnswer) return;
+    setTimeLeft(QUESTION_TIME);
+    setTimerExpired(false);
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(timerRef.current!);
+          setTimerExpired(true);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [activeDrillIndex, session.stage, hasSubmittedAnswer]);
+
+  // Stop timer when answer submitted
+  useEffect(() => {
+    if (hasSubmittedAnswer && timerRef.current) {
+      clearInterval(timerRef.current);
+    }
+  }, [hasSubmittedAnswer]);
+
+  // Reset drill chat when moving to new question
+  useEffect(() => {
+    setDrillChatMessages([]);
+    setDrillChatText('');
+  }, [activeDrillIndex]);
+
+  // Post-answer drill discussion
+  const handleDrillChatSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!drillChatText.trim() || isDrillChatLoading) return;
+    const currentDrill = session.drills[activeDrillIndex];
+    const userMsg = drillChatText.trim();
+    setDrillChatMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+    setDrillChatText('');
+    setIsDrillChatLoading(true);
+    try {
+      const response = await fetch('/api/chat/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          history: [
+            { sender: 'assistant', text: `Question: ${currentDrill.question}\nCorrect answer: ${currentDrill.options[currentDrill.correctAnswerIndex]}\nExplanation: ${currentDrill.explanation}` },
+            ...drillChatMessages.map(m => ({ sender: m.role === 'user' ? 'user' : 'assistant', text: m.text })),
+            { sender: 'user', text: userMsg }
+          ],
+          microSkill: session.microSkill,
+          latestMessage: userMsg
+        })
+      });
+      const data = await response.json();
+      setDrillChatMessages(prev => [...prev, { role: 'ai', text: data.assistantMessage || 'No response.' }]);
+    } catch {
+      setDrillChatMessages(prev => [...prev, { role: 'ai', text: 'Error getting response. Try again.' }]);
+    } finally {
+      setIsDrillChatLoading(false);
+    }
+  };
 
   // Handle Drag & Drop / Image Selection
   const handleImageUpload = (file: File) => {
@@ -651,29 +726,36 @@ export function ActiveChatSession({
         {session.stage === 'mastery' && session.drills && session.drills.length > 0 && (
           <div className="bg-white border border-[#e4e4e3] p-5 rounded-md space-y-5 shadow-[0_1px_2px_rgba(15,15,15,0.05)]" id="mastery-drills-panel">
             
-            {/* Headers, Streak Counter */}
+            {/* Headers, Streak Counter + Timer */}
             <div className="flex justify-between items-center pb-3 border-b border-[#e4e4e3]" id="drills-stat-header">
               <div className="space-y-0.5">
                 <span className="text-[10px] text-[#37352f]/40 font-semibold tracking-wider font-sans uppercase">ACTIVE RECALL CHALLENGE</span>
-                <h3 className="font-bold text-[#37352f] font-sans text-xs">Target Streak Threshold: 3 in a row</h3>
+                <h3 className="font-bold text-[#37352f] font-sans text-xs">Target Streak: 3 in a row</h3>
               </div>
-              
-              {/* Streak bubbles */}
-              <div className="flex items-center gap-2" id="streak-bubbles-container">
-                <span className="text-xs font-bold text-[#37352f]/60 font-sans">Current Streak:</span>
-                <div className="flex gap-1">
-                  {[1, 2, 3].map((val) => (
-                    <div
-                      key={val}
-                      className={`h-5 w-5 rounded-full flex items-center justify-center border font-sans text-[10px] font-bold transition-all ${
-                        session.drillStreak >= val
-                          ? 'bg-[#2ebd6e] text-white border-[#249557]'
-                          : 'bg-[#f1f1ef] text-[#37352f]/50 border-[#e4e4e3]'
-                      }`}
-                    >
-                      {val}
-                    </div>
-                  ))}
+
+              <div className="flex items-center gap-4">
+                {/* Timer */}
+                {!hasSubmittedAnswer && (
+                  <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded border font-mono text-xs font-bold transition-colors ${
+                    timerExpired ? 'bg-red-50 border-red-300 text-red-600' :
+                    timeLeft <= 20 ? 'bg-orange-50 border-orange-300 text-orange-600' :
+                    timeLeft <= 45 ? 'bg-yellow-50 border-yellow-200 text-yellow-700' :
+                    'bg-[#f1f1ef] border-[#e4e4e3] text-[#37352f]/70'
+                  }`}>
+                    <span>{timerExpired ? 'TIME' : `${Math.floor(timeLeft/60)}:${String(timeLeft%60).padStart(2,'0')}`}</span>
+                  </div>
+                )}
+
+                {/* Streak bubbles */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-[#37352f]/60 font-sans">Streak:</span>
+                  <div className="flex gap-1">
+                    {[1, 2, 3].map((val) => (
+                      <div key={val} className={`h-5 w-5 rounded-full flex items-center justify-center border font-sans text-[10px] font-bold transition-all ${
+                        session.drillStreak >= val ? 'bg-[#2ebd6e] text-white border-[#249557]' : 'bg-[#f1f1ef] text-[#37352f]/50 border-[#e4e4e3]'
+                      }`}>{val}</div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -777,26 +859,63 @@ export function ActiveChatSession({
                     )}
                   </div>
 
-                  {/* High yield feedback/rationales - Styled like Notion Callout Boxes */}
+                  {/* Explanation + post-answer discussion */}
                   {hasSubmittedAnswer && (
-                    <div className={`p-4 rounded-md border space-y-1.5 mt-3 text-xs font-sans ${
-                      selectedOption === currentDrill.correctAnswerIndex
-                        ? 'bg-[#f0f9f4] border-[#249557]/30 text-[#1b5d38]'
-                        : 'bg-[#fdf3f3] border-[#e0b0b0]/30 text-[#6b2121]'
-                    }`} id="drill-explanations-box">
-                      <div className="flex items-center gap-1 font-bold uppercase tracking-wider text-[9px]">
-                        {selectedOption === currentDrill.correctAnswerIndex ? (
-                          <span className="flex items-center gap-1.5 text-[#1b5d38]"><CheckCircle2 size={12} /> CORRECT ACQUISITION</span>
-                        ) : (
-                          <span className="flex items-center gap-1.5 text-[#6b2121]"><XCircle size={12} /> ENCOUNTERED MISCONCEPTION</span>
-                        )}
+                    <div className="space-y-3 mt-3">
+                      {/* Explanation box */}
+                      <div className={`p-4 rounded-md border space-y-1.5 text-xs font-sans ${
+                        selectedOption === currentDrill.correctAnswerIndex
+                          ? 'bg-[#f0f9f4] border-[#249557]/30 text-[#1b5d38]'
+                          : 'bg-[#fdf3f3] border-[#e0b0b0]/30 text-[#6b2121]'
+                      }`} id="drill-explanations-box">
+                        <div className="flex items-center gap-1 font-bold uppercase tracking-wider text-[9px]">
+                          {selectedOption === currentDrill.correctAnswerIndex ? (
+                            <span className="flex items-center gap-1.5 text-[#1b5d38]"><CheckCircle2 size={12} /> CORRECT</span>
+                          ) : (
+                            <span className="flex items-center gap-1.5 text-[#6b2121]"><XCircle size={12} /> INCORRECT</span>
+                          )}
+                        </div>
+                        <p className="leading-relaxed opacity-90 whitespace-pre-line text-xs font-sans text-[#37352f]/90">
+                          {currentDrill.explanation}
+                        </p>
                       </div>
-                      <p className="font-bold leading-normal text-xs pt-1">
-                        Explanation Mechanics:
-                      </p>
-                      <p className="leading-relaxed opacity-90 whitespace-pre-line text-xs font-sans antialiased text-[#37352f]/90">
-                        {currentDrill.explanation}
-                      </p>
+
+                      {/* Post-answer discussion chat */}
+                      <div className="border border-[#e4e4e3] rounded-md bg-white" id="drill-discussion-chat">
+                        <div className="px-3 py-2 border-b border-[#e4e4e3] flex items-center gap-1.5">
+                          <MessageSquare size={11} className="text-[#37352f]/50" />
+                          <span className="text-[10px] font-bold text-[#37352f]/60 uppercase tracking-wider">Discuss this question with your tutor</span>
+                        </div>
+                        {drillChatMessages.length > 0 && (
+                          <div className="p-3 space-y-2 max-h-48 overflow-y-auto">
+                            {drillChatMessages.map((m, i) => (
+                              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                <div className={`max-w-[85%] rounded p-2.5 text-xs font-sans leading-relaxed ${
+                                  m.role === 'user' ? 'bg-[#efeee3] text-[#37352f]' : 'bg-[#f7f7f5] border border-[#e4e4e3] text-[#37352f]/90'
+                                }`}>{m.text}</div>
+                              </div>
+                            ))}
+                            {isDrillChatLoading && (
+                              <div className="flex justify-start">
+                                <div className="bg-[#f7f7f5] border border-[#e4e4e3] rounded p-2.5 text-xs text-[#37352f]/50 font-sans">Thinking...</div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <form onSubmit={handleDrillChatSend} className="flex gap-2 p-2.5 border-t border-[#e4e4e3]">
+                          <input
+                            type="text"
+                            value={drillChatText}
+                            onChange={e => setDrillChatText(e.target.value)}
+                            placeholder="Ask about this question, why your answer was wrong, clarify the concept..."
+                            className="flex-1 p-2 border border-[#e4e4e3] rounded text-xs font-sans focus:outline-none focus:border-zinc-400 bg-white"
+                          />
+                          <button type="submit" disabled={isDrillChatLoading}
+                            className="px-3 py-2 bg-[#37352f] hover:bg-[#2c2b27] text-white rounded text-xs cursor-pointer disabled:opacity-50 transition-colors">
+                            <Send size={11} />
+                          </button>
+                        </form>
+                      </div>
                     </div>
                   )}
 
