@@ -97,7 +97,8 @@ export function ActiveChatSession({
       });
 
       if (!response.ok) {
-        throw new Error('Failed to run screenshot diagnosis.');
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `API error ${response.status}: Failed to run intake.`);
       }
 
       const data = await response.json();
