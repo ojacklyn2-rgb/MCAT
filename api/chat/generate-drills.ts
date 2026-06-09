@@ -44,7 +44,7 @@ Section: ${ctx.label}
 ${ctx.subjectGuidance}
 
 AAMC MCAT format rules:
-1. ONE passage, 150-250 words. Written as ${ctx.passageType} NOT a clinical vignette.
+1. ONE passage, 300-600 words. Written as ${ctx.passageType} NOT a clinical vignette. Be thorough — include detailed experimental setup, methods, results, and discussion so students must read carefully.
 2. ALL 5 questions reference the SAME passage. The passage stays visible the entire time.
 3. ${ctx.questionNote}
 4. Use real AAMC question stems: "Which of the following best explains...", "The researcher would most likely conclude...", "Which finding would most support the hypothesis that...", "If the experiment were repeated with X instead of Y, the result would most likely..."
