@@ -769,7 +769,9 @@ export function ActiveChatSession({
                     <div className="space-y-3">
                       <div className="flex items-center gap-1.5 pb-2 border-b border-[#e4e4e3]">
                         <FileText size={11} className="text-[#37352f]/40 shrink-0" />
-                        <span className="text-[9px] font-bold text-[#37352f]/40 uppercase tracking-wider">Research Passage</span>
+                        <span className="text-[9px] font-bold text-[#37352f]/40 uppercase tracking-wider">
+                          {session.section === 'CARS' ? 'CARS Passage' : session.section === 'PS' ? 'Study Passage' : 'Research Passage'}
+                        </span>
                       </div>
                       <p className="text-xs text-[#37352f]/85 font-sans leading-relaxed whitespace-pre-line">
                         {session.drillPassage || currentDrill.passage || ''}

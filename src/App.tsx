@@ -79,20 +79,16 @@ export default function App() {
       if (storedSessions) {
         setSessions(JSON.parse(storedSessions));
       } else {
-        // Setup initial default study session to welcome student
-        const firstSessionId = `session_${Date.now()}`;
-        const defaultSession: ChatSession = {
-          id: firstSessionId,
-          title: 'Acid/Base Log Estimation Study',
-          createdAt: Date.now(),
-          stage: 'intake',
-          messages: [],
-          drills: [],
-          drillStreak: 0,
-          drillHistory: []
-        };
-        setSessions([defaultSession]);
-        setActiveSessionId(firstSessionId);
+        // Create one default session per MCAT section
+        const now = Date.now();
+        const defaultSessions: ChatSession[] = [
+          { id: `session_cp_${now}`, title: 'Chem/Phys (C/P)', createdAt: now,     section: 'CP',   stage: 'intake', messages: [], drills: [], drillStreak: 0, drillHistory: [] },
+          { id: `session_ca_${now}`, title: 'CARS',             createdAt: now - 1, section: 'CARS', stage: 'intake', messages: [], drills: [], drillStreak: 0, drillHistory: [] },
+          { id: `session_bb_${now}`, title: 'Bio/Biochem (B/B)', createdAt: now - 2, section: 'BB', stage: 'intake', messages: [], drills: [], drillStreak: 0, drillHistory: [] },
+          { id: `session_ps_${now}`, title: 'Psych/Soc (P/S)',  createdAt: now - 3, section: 'PS',  stage: 'intake', messages: [], drills: [], drillStreak: 0, drillHistory: [] },
+        ];
+        setSessions(defaultSessions);
+        setActiveSessionId(defaultSessions[0].id);
       }
 
       if (storedFlashcards) {
