@@ -89,7 +89,7 @@ Return your analysis strictly in the requested JSON format.
     contents.push({ text: promptText });
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.0-flash",
       contents,
       config: {
         responseMimeType: "application/json",
@@ -169,7 +169,7 @@ Return your response strictly in the JSON format specified.
 `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.0-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -226,7 +226,7 @@ Return your generated questions in the specified JSON schema.
 `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.0-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -309,7 +309,7 @@ Provide a critique that is direct and specific (2-3 sentences). Do not be encour
 `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.0-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -363,7 +363,7 @@ Return strictly in the requested JSON structure.
 `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.0-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -423,7 +423,7 @@ Return response strictly formatted as the JSON array of questions.
 `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.0-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json",

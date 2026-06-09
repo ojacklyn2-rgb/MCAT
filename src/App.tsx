@@ -130,10 +130,12 @@ export default function App() {
 
   // 4. Session Action Managers
   const handleCreateSession = () => {
+    const title = prompt('Name this study session (e.g. "Acid/Base pH Errors"):');
+    if (title === null) return; // user cancelled
     const newId = `session_${Date.now()}`;
     const newSession: ChatSession = {
       id: newId,
-      title: `MCAT Study Session #${sessions.length + 1}`,
+      title: title.trim() || `Study Session #${sessions.length + 1}`,
       createdAt: Date.now(),
       stage: 'intake',
       messages: [],
@@ -325,7 +327,11 @@ export default function App() {
                             <span className="text-[9px] text-[#37352f]/40 font-sans uppercase block tracking-wider font-semibold">
                               {item.stage}
                             </span>
-                            <span className="text-xs truncate font-sans block font-semibold hover:text-[#37352f]">
+                            <span
+                              className="text-xs truncate font-sans block font-semibold hover:text-[#37352f] cursor-text"
+                              title="Double-click to rename"
+                              onDoubleClick={(e) => { e.stopPropagation(); handleRenameSession(item.id); }}
+                            >
                               {item.title}
                             </span>
                           </div>
