@@ -1,0 +1,6 @@
+{
+  "name": "MCAT Mistake to Mastery",
+  "description": "An AI-powered, practice-first error analyst and Socratic study tool for 520+ MCAT score preparation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
