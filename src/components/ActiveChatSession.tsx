@@ -1004,21 +1004,29 @@ export function ActiveChatSession({
           </div>
         )}
 
-        {/* Uploaded Incorrect Question Preview — compact thumbnail */}
-        {session.errorInputImage && (
+        {/* Source Question Panel — shows screenshot or pasted text */}
+        {(session.errorInputImage || session.errorInputText) && (
           <div className="bg-white border border-[#e4e4e3] rounded-md p-3 space-y-2 shadow-[0_1px_2px_rgba(15,15,15,0.03)]" id="side-screenshot-panel">
             <span className="font-semibold text-[#37352f]/50 block uppercase tracking-wider text-[8px] font-sans">Source Question</span>
-            <img
-              src={session.errorInputImage}
-              alt="Source Question"
-              className="w-full max-h-36 object-cover object-top rounded border border-[#e4e4e3] cursor-zoom-in hover:opacity-90 transition-opacity"
-              onClick={() => {
-                const w = window.open();
-                if (w) w.document.write(`<img src="${session.errorInputImage}" style="max-width:100%;height:auto;" />`);
-              }}
-              title="Click to view full size"
-            />
-            <p className="text-[9px] text-[#37352f]/40 font-sans text-center">Click to expand</p>
+            {session.errorInputImage ? (
+              <>
+                <img
+                  src={session.errorInputImage}
+                  alt="Source Question"
+                  className="w-full max-h-36 object-cover object-top rounded border border-[#e4e4e3] cursor-zoom-in hover:opacity-90 transition-opacity"
+                  onClick={() => {
+                    const w = window.open();
+                    if (w) w.document.write(`<img src="${session.errorInputImage}" style="max-width:100%;height:auto;" />`);
+                  }}
+                  title="Click to view full size"
+                />
+                <p className="text-[9px] text-[#37352f]/40 font-sans text-center">Click to expand</p>
+              </>
+            ) : (
+              <p className="text-[11px] text-[#37352f]/70 font-sans leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto bg-[#f7f7f5] p-2.5 rounded border border-[#e4e4e3]">
+                {session.errorInputText}
+              </p>
+            )}
           </div>
         )}
       </div>

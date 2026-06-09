@@ -27,7 +27,8 @@ Return this exact JSON structure:
   const userPrompt = `Generate 3 difficult 520+ level MCAT questions targeting:
 Micro-skill: "${microSkillName}" — ${microSkillDescription || ""}
 
-Rules: Higher-order reasoning only. Clinical/lab passages. correctAnswerIndex must be 0-3. Explain why EACH wrong answer is wrong.`;
+Rules: Higher-order reasoning only. Clinical/lab passages. correctAnswerIndex must be 0-3. Explain why EACH wrong answer is wrong.
+CRITICAL: Do NOT reference any figures, graphs, images, or tables (e.g. "Figure 1", "the graph below", "as shown"). All information needed to answer must be fully contained in the passage text and question text. No visual aids exist.`;
 
   try {
     const completion = await groq.chat.completions.create({
