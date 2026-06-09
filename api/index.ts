@@ -300,4 +300,8 @@ Rules: Mix topics — never two consecutive questions from the same skill. 520+ 
   }
 });
 
-export default app;
+import type { IncomingMessage, ServerResponse } from "http";
+
+export default function handler(req: IncomingMessage, res: ServerResponse) {
+  return app(req, res);
+}
