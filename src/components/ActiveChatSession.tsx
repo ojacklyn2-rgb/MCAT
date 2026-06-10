@@ -751,7 +751,7 @@ export function ActiveChatSession({
                         </span>
                       </div>
                       <p className="text-xs text-[#37352f]/85 font-sans leading-relaxed whitespace-pre-line">
-                        {session.drillPassage || ''}
+                        {session.drillPassage || currentDrill.passage || 'Passage content not loaded. Please regenerate the question set.'}
                       </p>
                     </div>
                   </div>

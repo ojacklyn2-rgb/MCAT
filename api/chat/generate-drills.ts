@@ -69,28 +69,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const ctx = SECTION_CONTEXT[section] || SECTION_CONTEXT["CP"];
 
-  const systemPrompt = `You are an AAMC MCAT question writer for the ${ctx.label} section. Respond with valid JSON only — no markdown, no extra text.
+  const systemPrompt = `You are an expert AAMC MCAT question writer for the ${ctx.label} section. Respond with valid JSON only — no markdown, no extra text.
 
 SECTION: ${ctx.label}
 
-=== PASSAGE (WRITE THIS FIRST) ===
+═══════════════════════════════════
+STEP 1: WRITE THE PASSAGE (300–600 words)
+═══════════════════════════════════
 ${ctx.passageInstructions}
 
-CRITICAL PASSAGE LENGTH RULE: The passage MUST be 300–600 words total. Write 4–6 full paragraphs. Do not stop early — a passage under 300 words is too short. The same passage is shown to the student for ALL 5 questions, so it must contain enough detail to support 5 different questions.
+The passage MUST be 300–600 words. Write at least 4 full paragraphs. This is mandatory — do not write a short passage.
 
-=== 5 QUESTIONS ===
+═══════════════════════════════════
+STEP 2: WRITE 5 AAMC-QUALITY QUESTIONS
+═══════════════════════════════════
 ${ctx.questionInstructions}
-- All 5 questions must reference the same passage
-- Distractors must be plausible to students who partially understand the concept
-- NEVER mention figures, graphs, images, tables, or visual aids
-- correctAnswerIndex must be 0, 1, 2, or 3
 
-=== JSON OUTPUT ===
+STRICT RULES FOR EVERY QUESTION:
+1. NEVER ask a basic recall or definition question. Wrong examples: "What is X?", "Which of the following defines X?", "What does X mean?"
+2. Every question MUST require the student to combine information from the passage WITH outside MCAT knowledge to arrive at the answer. Neither alone is sufficient.
+3. Every question must involve REASONING — applying a concept, predicting an outcome, explaining a mechanism, identifying an implication, or evaluating evidence.
+4. Approved AAMC stems: "Which of the following best explains why...", "The researcher would most likely conclude that...", "Based on the passage, which outcome would most likely result if...", "Which of the following findings would most support the hypothesis that...", "The author's use of X most likely serves to...", "If the experiment were repeated under condition Y, the results would most likely..."
+5. Answer choices must be plausible to a student who has partial understanding — no obviously wrong distractors.
+6. NEVER reference figures, graphs, tables, images, or visual aids. Text only.
+7. correctAnswerIndex must be 0, 1, 2, or 3.
+
+═══════════════════════════════════
+JSON OUTPUT FORMAT
+═══════════════════════════════════
 {
   "passageTitle": "Passage 1 (Questions 1–5)",
-  "passage": "[4-6 paragraphs, 300-600 words — same passage for all 5 questions]",
+  "passage": "Full 300-600 word passage text here across 4-6 paragraphs...",
   "drills": [
-    { "questionNumber": 1, "question": "...", "options": ["A. ...", "B. ...", "C. ...", "D. ..."], "correctAnswerIndex": 0, "explanation": "Why correct. Why A wrong. Why B wrong. Why C wrong. Why D wrong." },
+    { "questionNumber": 1, "question": "AAMC-style reasoning question", "options": ["A. ...", "B. ...", "C. ...", "D. ..."], "correctAnswerIndex": 0, "explanation": "Why correct answer is right AND why each wrong answer is wrong, referencing specific passage details." },
     { "questionNumber": 2, "question": "...", "options": ["A. ...", "B. ...", "C. ...", "D. ..."], "correctAnswerIndex": 1, "explanation": "..." },
     { "questionNumber": 3, "question": "...", "options": ["A. ...", "B. ...", "C. ...", "D. ..."], "correctAnswerIndex": 2, "explanation": "..." },
     { "questionNumber": 4, "question": "...", "options": ["A. ...", "B. ...", "C. ...", "D. ..."], "correctAnswerIndex": 3, "explanation": "..." },
@@ -105,14 +116,14 @@ REMINDER: The passage must be 300–600 words across 4-6 paragraphs. Return vali
 
   try {
     const completion = await groq.chat.completions.create({
-      model: "llama-3.1-8b-instant",
+      model: "llama-3.3-70b-versatile",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt }
       ],
       response_format: { type: "json_object" },
       temperature: 0.7,
-      max_tokens: 4000,
+      max_tokens: 4096,
     });
 
     res.json(JSON.parse(completion.choices[0].message.content || "{}"));
