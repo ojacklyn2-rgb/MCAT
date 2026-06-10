@@ -642,3 +642,36 @@ p, span, li { line-height: 1.55; }
   border-color: var(--rn-border) !important;
   border-radius: var(--rn-radius) !important;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   FONT SIZE SCALE — REMNOTE SIZING
+   Tailwind's text-xs = 12px is too small. RemNote body = 15px.
+   Every tier is bumped up ~2–3px to match RemNote's scale.
+   ═══════════════════════════════════════════════════════════ */
+
+/* Micro labels (stage tags, "STUDY SESSIONS" header, etc.) */
+.text-\[9px\]   { font-size: 11px !important; line-height: 1.45 !important; }
+.text-\[10px\]  { font-size: 12px !important; line-height: 1.45 !important; }
+.text-\[11px\]  { font-size: 13px !important; line-height: 1.5  !important; }
+
+/* Main body tier — text-xs is the workhorse of the UI */
+.text-xs        { font-size: 14px !important; line-height: 1.55 !important; }
+
+/* Secondary body */
+.text-sm        { font-size: 15px !important; line-height: 1.6  !important; }
+
+/* Base */
+.text-base      { font-size: 16px !important; line-height: 1.65 !important; }
+
+/* Subheadings */
+.text-lg        { font-size: 18px !important; line-height: 1.5  !important; }
+
+/* Section headings */
+.text-xl        { font-size: 22px !important; line-height: 1.35 !important; }
+
+/* Large headings */
+.text-2xl       { font-size: 26px !important; line-height: 1.25 !important; }
+.text-3xl       { font-size: 30px !important; line-height: 1.2  !important; }
+
+/* Global base so anything not covered by a Tailwind class also scales up */
+body            { font-size: 15px; }
