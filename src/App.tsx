@@ -361,6 +361,7 @@ export default function App() {
         {activeTab === 'quiz' && (
           <InterleavingQuizRunner
             microSkills={microSkills}
+            sessions={sessions}
           />
         )}
 

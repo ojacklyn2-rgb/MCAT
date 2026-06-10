@@ -1,42 +1,92 @@
 import React, { useState } from 'react';
-import { MicroSkill, PracticeQuestion } from '../types';
-import { Sparkles, ArrowRight, CheckCircle2, XCircle, RefreshCw, Layers, Award, FileText, CheckCircle } from 'lucide-react';
+import { MicroSkill, ChatSession } from '../types';
+import { Sparkles, ArrowRight, CheckCircle2, XCircle, RefreshCw, Layers, Award, FileText } from 'lucide-react';
+
+interface PassageSet {
+  passageTitle: string;
+  passage: string;
+  skillName: string;
+  section: string;
+  questions: {
+    question: string;
+    options: string[];
+    correctAnswerIndex: number;
+    explanation: string;
+  }[];
+}
 
 interface InterleavingQuizRunnerProps {
   microSkills: MicroSkill[];
+  sessions: ChatSession[];
 }
 
-export function InterleavingQuizRunner({ microSkills }: InterleavingQuizRunnerProps) {
-  const [questions, setQuestions] = useState<PracticeQuestion[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
+const SECTION_LABELS: Record<string, string> = {
+  CP: 'Chem/Phys',
+  CARS: 'CARS',
+  BB: 'Bio/Biochem',
+  PS: 'Psych/Soc',
+};
+
+export function InterleavingQuizRunner({ microSkills, sessions }: InterleavingQuizRunnerProps) {
+  const [passageSets, setPassageSets] = useState<PassageSet[]>([]);
+  const [currentSetIndex, setCurrentSetIndex] = useState(0);
+  const [currentQIndex, setCurrentQIndex] = useState(0);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
-  const [answers, setAnswers] = useState<{ [index: number]: number }>({});
-  const [hasCheckedCurrent, setHasCheckedCurrent] = useState(false);
+  const [hasChecked, setHasChecked] = useState(false);
+  // answers[setIdx][qIdx] = chosen index
+  const [answers, setAnswers] = useState<number[][]>([]);
   const [quizFinished, setQuizFinished] = useState(false);
-  
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Settle mastered or available skills to interleave
-  // If they have no mastered skills, we fall back to all logged skills so they can still quiz
-  const masteredSkills = microSkills.filter(s => s.masteryStreak >= 3 || s.masteredAt);
-  const fallbackSkills = microSkills.length > 0 ? microSkills : [];
-  const selectedSkillsForQuiz = masteredSkills.length >= 2 ? masteredSkills : fallbackSkills;
+  // Filter sessions from past 7 days
+  const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const recentSessions = sessions.filter(s => s.createdAt >= oneWeekAgo && s.microSkill);
 
-  // Initiate Interleaved Quiz synthesis
+  // Build skill list from recent sessions, with section context
+  // Each entry: { skill, section, masteryStreak }
+  const recentSkillMap = new Map<string, { skill: MicroSkill; section: string }>();
+  for (const s of recentSessions) {
+    if (s.microSkill && !recentSkillMap.has(s.microSkill.id)) {
+      recentSkillMap.set(s.microSkill.id, {
+        skill: s.microSkill,
+        section: s.section || 'CP',
+      });
+    }
+  }
+
+  // Also include microSkills updated this week (fallback if sessions don't have microSkill attached)
+  for (const skill of microSkills) {
+    if (!recentSkillMap.has(skill.id)) {
+      // Use broadTopic to guess section if possible
+      recentSkillMap.set(skill.id, { skill, section: 'CP' });
+    }
+  }
+
+  // Sort: low masteryStreak first (less mastered = lower confidence), then by unresolvedCount desc
+  const sortedSkills = [...recentSkillMap.values()].sort((a, b) => {
+    if (a.skill.masteryStreak !== b.skill.masteryStreak) {
+      return a.skill.masteryStreak - b.skill.masteryStreak;
+    }
+    return b.skill.unresolvedCount - a.skill.unresolvedCount;
+  });
+
+  const skillSetsForQuiz = sortedSkills.slice(0, 3);
+
   const handleStartQuiz = async () => {
-    if (selectedSkillsForQuiz.length === 0) {
-      setErrorMsg('You need to log at least one micro-skill gap in Socratic chat to synthesize a custom interleaved quiz.');
+    if (skillSetsForQuiz.length === 0) {
+      setErrorMsg('Complete at least one Socratic coaching session this week to generate your weekly quiz.');
       return;
     }
 
     setIsLoading(true);
     setErrorMsg('');
-    setQuestions([]);
-    setCurrentIndex(0);
-    setAnswers({});
+    setPassageSets([]);
+    setCurrentSetIndex(0);
+    setCurrentQIndex(0);
     setSelectedOption(null);
-    setHasCheckedCurrent(false);
+    setHasChecked(false);
+    setAnswers([]);
     setQuizFinished(false);
 
     try {
@@ -44,286 +94,318 @@ export function InterleavingQuizRunner({ microSkills }: InterleavingQuizRunnerPr
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          microSkills: selectedSkillsForQuiz.map(s => ({ name: s.name, description: s.description }))
+          skillSets: skillSetsForQuiz.map(({ skill, section }) => ({
+            name: skill.name,
+            description: skill.description,
+            section,
+          }))
         })
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to synchronize quiz passages.');
-      }
+      if (!response.ok) throw new Error('Failed to generate quiz passages.');
 
       const data = await response.json();
-      if (data.questions && data.questions.length > 0) {
-        setQuestions(data.questions);
+      if (data.passageSets && data.passageSets.length > 0) {
+        setPassageSets(data.passageSets);
+        setAnswers(data.passageSets.map((s: PassageSet) => new Array(s.questions.length).fill(-1)));
       } else {
-        throw new Error('No questions received from generator.');
+        throw new Error('No passage sets received.');
       }
     } catch (err: any) {
-      console.error(err);
-      setErrorMsg(err.message || 'Interleaved quiz generation failed.');
+      setErrorMsg(err.message || 'Quiz generation failed.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleCheckAnswer = () => {
-    if (selectedOption === null || hasCheckedCurrent) return;
-    setAnswers({ ...answers, [currentIndex]: selectedOption });
-    setHasCheckedCurrent(true);
+  const handleCheck = () => {
+    if (selectedOption === null || hasChecked) return;
+    const updated = answers.map((row, si) =>
+      si === currentSetIndex
+        ? row.map((v, qi) => qi === currentQIndex ? selectedOption : v)
+        : row
+    );
+    setAnswers(updated);
+    setHasChecked(true);
   };
 
   const handleNext = () => {
-    setSelectedOption(null);
-    setHasCheckedCurrent(false);
-
-    if (currentIndex < questions.length - 1) {
-      setCurrentIndex(currentIndex + 1);
+    const set = passageSets[currentSetIndex];
+    if (currentQIndex < set.questions.length - 1) {
+      setCurrentQIndex(currentQIndex + 1);
+    } else if (currentSetIndex < passageSets.length - 1) {
+      setCurrentSetIndex(currentSetIndex + 1);
+      setCurrentQIndex(0);
     } else {
       setQuizFinished(true);
     }
+    setSelectedOption(null);
+    setHasChecked(false);
   };
 
   // Score computation
-  const correctCount = questions.reduce((acc, q, idx) => {
-    const chosen = answers[idx];
-    return chosen === q.correctAnswerIndex ? acc + 1 : acc;
-  }, 0);
+  const totalQuestions = passageSets.reduce((acc, s) => acc + s.questions.length, 0);
+  const totalCorrect = passageSets.reduce((acc, set, si) =>
+    acc + set.questions.reduce((a, q, qi) => a + (answers[si]?.[qi] === q.correctAnswerIndex ? 1 : 0), 0), 0);
+  const scorePercentage = totalQuestions > 0 ? Math.round((totalCorrect / totalQuestions) * 100) : 0;
 
-  const scorePercentage = questions.length > 0 ? Math.round((correctCount / questions.length) * 100) : 0;
+  const currentSet = passageSets[currentSetIndex];
+  const currentQ = currentSet?.questions[currentQIndex];
+  const totalQSoFar = passageSets.slice(0, currentSetIndex).reduce((a, s) => a + s.questions.length, 0) + currentQIndex + 1;
+  const overallTotal = passageSets.reduce((a, s) => a + s.questions.length, 0);
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto px-6 text-[#37352f]" id="interleaved-lab">
-      
+    <div className="space-y-6 max-w-6xl mx-auto px-6 text-[#37352f]" id="interleaved-lab">
+
       {/* Header */}
       <div className="border-b border-[#e4e4e3] pb-4" id="quiz-header">
         <h1 className="text-xl font-bold tracking-tight text-[#37352f] font-sans flex items-center gap-2">
           <Layers size={18} className="text-[#37352f]/70" />
-          On-Demand Interleaved Quizzes
+          Weekly Interleaved Quizzes
         </h1>
         <p className="text-xs text-[#37352f]/60 font-sans mt-0.5">
-          Simulate high-stakes testing settings by scrambling multiple mastered microconcept gaps within a single clinical drill.
+          3 full passages from concepts you studied this week — prioritized by lowest mastery and confidence.
         </p>
       </div>
 
-      {/* Start Quiz Panel */}
-      {!isLoading && !questions.length && !quizFinished && (
+      {/* Start Panel */}
+      {!isLoading && passageSets.length === 0 && !quizFinished && (
         <div className="bg-white border border-[#e4e4e3] rounded-md p-6 text-center space-y-5 max-w-2xl mx-auto shadow-[0_1px_3px_rgba(15,15,15,0.05)]" id="quiz-pre-setup">
           <div className="inline-flex p-3 bg-[#f7f7f5] rounded-full text-[#37352f]/70 border border-[#e4e4e3]">
             <Sparkles size={20} />
           </div>
 
           <div className="space-y-1">
-            <h3 className="font-bold text-[#37352f] text-sm">Custom Lab Quiz Synthesis</h3>
+            <h3 className="font-bold text-[#37352f] text-sm">This Week's Passage Quiz</h3>
             <p className="text-xs text-[#37352f]/60 max-w-md mx-auto leading-normal">
-              We compile exactly 5 highly rigorous clinical/physiological MCQs testing your personal micro-skill gaps.
+              3 passages targeting your lowest-confidence concepts from the past 7 days. Each passage has 4 AAMC-style reasoning questions.
             </p>
           </div>
 
-          {/* Mastered topics catalog */}
-          <div className="p-3 bg-[#f7f7f5]/80 rounded border border-[#e4e4e3] text-left text-xs space-y-1.5" id="mastered-topics-roster">
-            <span className="font-bold uppercase tracking-wider text-[9px] text-[#37352f]/45 font-sans block">Concepts Selected for Scrambling:</span>
-            {selectedSkillsForQuiz.length === 0 ? (
-              <p className="text-[#37352f]/40 italic">No micro-skills logged yet. Write or upload mistake diagnostics in the "New Session" first.</p>
+          <div className="p-3 bg-[#f7f7f5]/80 rounded border border-[#e4e4e3] text-left text-xs space-y-1.5">
+            <span className="font-bold uppercase tracking-wider text-[9px] text-[#37352f]/45 font-sans block">
+              Concepts selected (lowest confidence first):
+            </span>
+            {skillSetsForQuiz.length === 0 ? (
+              <p className="text-[#37352f]/40 italic text-xs">No concepts from this week yet. Complete a Socratic coaching session first.</p>
             ) : (
-              <div className="flex flex-wrap gap-1.5 pt-1" id="topic-tags">
-                {selectedSkillsForQuiz.map((skill) => (
-                  <span key={skill.id} className="px-1.5 py-0.5 bg-white border border-[#e4e4e3] font-semibold rounded text-[11px] text-[#37352f]/80 block">
-                    {skill.name}
-                  </span>
+              <div className="flex flex-col gap-1.5 pt-1">
+                {skillSetsForQuiz.map(({ skill, section }, i) => (
+                  <div key={skill.id} className="flex items-center gap-2">
+                    <span className="text-[10px] text-[#37352f]/40 font-bold w-4">{i + 1}.</span>
+                    <span className="px-1.5 py-0.5 bg-white border border-[#e4e4e3] font-semibold rounded text-[11px] text-[#37352f]/80">
+                      {skill.name}
+                    </span>
+                    <span className="text-[10px] text-[#37352f]/40 font-sans">
+                      {SECTION_LABELS[section] || section} · streak {skill.masteryStreak}/3
+                    </span>
+                  </div>
                 ))}
               </div>
             )}
           </div>
 
           {errorMsg && (
-            <p className="text-xs text-red-600 bg-red-50 p-2.5 rounded font-medium border border-red-150">{errorMsg}</p>
+            <p className="text-xs text-red-600 bg-red-50 p-2.5 rounded font-medium border border-red-200">{errorMsg}</p>
           )}
 
           <button
             onClick={handleStartQuiz}
             type="button"
             className="px-6 py-2 bg-[#37352f] hover:bg-[#2c2b27] text-white font-sans text-xs font-semibold rounded transition cursor-pointer w-full sm:w-auto"
-            id="synth-quiz-btn"
           >
-            Synthesize Interleaved Quiz (5 Questions)
+            Generate Weekly Quiz (3 Passages)
           </button>
         </div>
       )}
 
-      {/* Loading view */}
+      {/* Loading */}
       {isLoading && (
-        <div className="bg-white border border-[#e4e4e3] rounded-md p-12 text-center space-y-3 max-w-2xl mx-auto shadow-[0_1px_3px_rgba(15,15,15,0.05)]" id="quiz-loading">
+        <div className="bg-white border border-[#e4e4e3] rounded-md p-12 text-center space-y-3 max-w-2xl mx-auto">
           <RefreshCw className="animate-spin text-[#37352f] h-6 w-6 mx-auto" />
-          <h3 className="font-bold text-[#37352f] text-sm font-sans">Scrambling Molecular Blueprints...</h3>
-          <p className="text-xs text-[#37352f]/50 max-w-xs mx-auto">Gemini is synthesizing high-difficulty clinical passages and organizing question interleaving constraints.</p>
+          <h3 className="font-bold text-[#37352f] text-sm font-sans">Generating 3 passages...</h3>
+          <p className="text-xs text-[#37352f]/50 max-w-xs mx-auto">Building AAMC-style passages for your lowest-confidence concepts from this week.</p>
         </div>
       )}
 
-      {/* Active Question View */}
-      {!isLoading && questions.length > 0 && !quizFinished && (
-        <div className="space-y-4" id="active-quiz-container">
-          
-          {/* Header step progress */}
-          <div className="bg-[#f7f7f5] border border-[#e4e4e3] p-3 rounded-md flex justify-between items-center text-xs" id="quiz-progress-bar">
+      {/* Active Quiz */}
+      {!isLoading && passageSets.length > 0 && !quizFinished && currentSet && currentQ && (
+        <div className="space-y-3">
+          {/* Progress bar */}
+          <div className="bg-[#f7f7f5] border border-[#e4e4e3] p-3 rounded-md flex justify-between items-center text-xs">
             <div>
-              <span className="text-[9px] font-bold text-[#37352f]/40 uppercase tracking-wider font-sans">SCRAMBLED INTERLEAVED EVALUATION</span>
-              <h4 className="font-bold text-[#37352f]/80 font-sans text-xs mt-0.5">MCQ {currentIndex + 1} of {questions.length}</h4>
+              <span className="text-[9px] font-bold text-[#37352f]/40 uppercase tracking-wider font-sans block">
+                PASSAGE {currentSetIndex + 1} OF {passageSets.length} · {SECTION_LABELS[currentSet.section] || currentSet.section}
+              </span>
+              <h4 className="font-bold text-[#37352f]/80 font-sans text-xs mt-0.5">
+                Question {currentQIndex + 1} of {currentSet.questions.length} &nbsp;·&nbsp; Overall {totalQSoFar}/{overallTotal}
+              </h4>
             </div>
-            
-            {/* Tested topic label */}
-            <span className="px-1.5 py-0.5 bg-[#efeee3] border border-[#e4e4e3] text-[#37352f]/70 rounded text-[10px] font-bold uppercase tracking-wider font-sans">
-              Tested Concept: {questions[currentIndex].microSkill || 'Diagnostics'}
+            <span className="px-1.5 py-0.5 bg-[#efeee3] border border-[#e4e4e3] text-[#37352f]/70 rounded text-[10px] font-bold font-sans">
+              {currentSet.skillName}
             </span>
           </div>
 
-          <div className="bg-white border border-[#e4e4e3] p-5 rounded-md space-y-4 shadow-[0_1px_3px_rgba(15,15,15,0.05)]" id="quiz-drill-panel">
-            
-            {/* Clinical Passage (if provided) */}
-            {questions[currentIndex].passage && (
-              <div className="p-3 bg-[#f7f7f5] border border-[#e4e4e3] rounded text-xs leading-relaxed font-sans text-[#37352f]/80 max-h-48 overflow-y-auto" id="quiz-passage">
-                <span className="font-bold text-[#37352f]/40 block uppercase tracking-wider text-[8px] font-sans flex items-center gap-1 mb-1">
-                  <FileText size={10} /> CLINICAL CASE PROTOCOL
-                </span>
-                <p>{questions[currentIndex].passage}</p>
+          {/* Split panel */}
+          <div className="flex flex-col lg:flex-row gap-4">
+            {/* Passage panel */}
+            <div className="lg:w-[40%] bg-[#f7f7f5] border border-[#e4e4e3] rounded-md p-4 space-y-2">
+              <div className="flex items-center gap-1.5 text-[8px] font-bold text-[#37352f]/40 uppercase tracking-wider font-sans">
+                <FileText size={10} />
+                {currentSet.passageTitle || `Passage ${currentSetIndex + 1}`}
               </div>
-            )}
-
-            {/* Question description */}
-            <h4 className="font-bold text-[#37352f] font-sans text-xs sm:text-sm leading-normal" id="quiz-question">
-              Q: {questions[currentIndex].question}
-            </h4>
-
-            {/* Option Choice grid */}
-            <div className="grid grid-cols-1 gap-1.5" id="quiz-options">
-              {questions[currentIndex].options.map((option, idx) => {
-                const letters = ['A', 'B', 'C', 'D'];
-                const isSelected = selectedOption === idx;
-                const isCorrectAnswer = idx === questions[currentIndex].correctAnswerIndex;
-
-                let optClass = "border-[#e4e4e3] bg-white hover:bg-[#f7f7f5]/45";
-                let badgeClass = "bg-[#f1f1ef] text-[#37352f]";
-
-                if (isSelected) {
-                  optClass = "border-[#37352f] bg-[#efeee3] font-semibold";
-                  badgeClass = "bg-[#37352f] text-white";
-                }
-
-                if (hasCheckedCurrent) {
-                  if (isCorrectAnswer) {
-                    optClass = "border-[#2ebd6e] bg-[#f0f9f4] text-[#195c36] font-bold";
-                    badgeClass = "bg-[#2ebd6e] text-white";
-                  } else if (isSelected) {
-                    optClass = "border-red-400 bg-red-50 text-red-950";
-                    badgeClass = "bg-red-500 text-white";
-                  } else {
-                    optClass = "border-[#e4e4e3] bg-white opacity-40";
-                  }
-                }
-
-                return (
-                  <button
-                    key={idx}
-                    disabled={hasCheckedCurrent}
-                    onClick={() => setSelectedOption(idx)}
-                    className={`w-full text-left p-2.5 border rounded flex items-start gap-2.5 transition font-sans text-xs sm:text-sm cursor-pointer ${optClass}`}
-                  >
-                    <span className={`h-5 w-5 rounded-sm shrink-0 flex items-center justify-center font-bold text-[10px] ${badgeClass}`}>
-                      {letters[idx]}
-                    </span>
-                    <span className="mt-0.5 leading-snug">{option}</span>
-                  </button>
-                );
-              })}
+              <p className="text-xs leading-relaxed font-sans text-[#37352f]/80 whitespace-pre-line">
+                {currentSet.passage}
+              </p>
             </div>
 
-            {/* Actions */}
-            <div className="flex justify-end pt-2" id="quiz-controls-footer">
-              {!hasCheckedCurrent ? (
-                <button
-                  type="button"
-                  disabled={selectedOption === null}
-                  onClick={handleCheckAnswer}
-                  className="px-4 py-1.5 bg-[#37352f] text-white rounded font-sans text-xs font-semibold hover:bg-[#2c2b27] disabled:opacity-40 transition cursor-pointer"
-                  id="quiz-check-btn"
-                >
-                  Verify Answer Selection
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleNext}
-                  className="px-4 py-1.5 bg-[#37352f] text-white rounded font-sans text-xs font-semibold hover:bg-[#2c2b27] transition flex items-center gap-1 cursor-pointer"
-                  id="quiz-next-btn"
-                >
-                  {currentIndex === questions.length - 1 ? 'Finish interleaved quiz' : 'Next Question'} <ArrowRight size={12} />
-                </button>
+            {/* Question panel */}
+            <div className="lg:w-[60%] bg-white border border-[#e4e4e3] rounded-md p-5 space-y-4 shadow-[0_1px_3px_rgba(15,15,15,0.05)]">
+              <h4 className="font-bold text-[#37352f] font-sans text-xs sm:text-sm leading-normal">
+                {currentQ.question}
+              </h4>
+
+              <div className="grid grid-cols-1 gap-1.5">
+                {currentQ.options.map((option, idx) => {
+                  const letters = ['A', 'B', 'C', 'D'];
+                  const isSelected = selectedOption === idx;
+                  const isCorrect = idx === currentQ.correctAnswerIndex;
+
+                  let optClass = "border-[#e4e4e3] bg-white hover:bg-[#f7f7f5]/45";
+                  let badgeClass = "bg-[#f1f1ef] text-[#37352f]";
+
+                  if (isSelected && !hasChecked) {
+                    optClass = "border-[#37352f] bg-[#efeee3] font-semibold";
+                    badgeClass = "bg-[#37352f] text-white";
+                  }
+
+                  if (hasChecked) {
+                    if (isCorrect) {
+                      optClass = "border-[#2ebd6e] bg-[#f0f9f4] text-[#195c36] font-bold";
+                      badgeClass = "bg-[#2ebd6e] text-white";
+                    } else if (isSelected) {
+                      optClass = "border-red-400 bg-red-50 text-red-950";
+                      badgeClass = "bg-red-500 text-white";
+                    } else {
+                      optClass = "border-[#e4e4e3] bg-white opacity-40";
+                    }
+                  }
+
+                  return (
+                    <button
+                      key={idx}
+                      disabled={hasChecked}
+                      onClick={() => setSelectedOption(idx)}
+                      className={`w-full text-left p-2.5 border rounded flex items-start gap-2.5 transition font-sans text-xs sm:text-sm cursor-pointer ${optClass}`}
+                    >
+                      <span className={`h-5 w-5 rounded-sm shrink-0 flex items-center justify-center font-bold text-[10px] ${badgeClass}`}>
+                        {letters[idx]}
+                      </span>
+                      <span className="mt-0.5 leading-snug">{option}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flex justify-end pt-1">
+                {!hasChecked ? (
+                  <button
+                    type="button"
+                    disabled={selectedOption === null}
+                    onClick={handleCheck}
+                    className="px-4 py-1.5 bg-[#37352f] text-white rounded font-sans text-xs font-semibold hover:bg-[#2c2b27] disabled:opacity-40 transition cursor-pointer"
+                  >
+                    Submit Answer
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleNext}
+                    className="px-4 py-1.5 bg-[#37352f] text-white rounded font-sans text-xs font-semibold hover:bg-[#2c2b27] transition flex items-center gap-1 cursor-pointer"
+                  >
+                    {currentSetIndex === passageSets.length - 1 && currentQIndex === currentSet.questions.length - 1
+                      ? 'Finish Quiz'
+                      : currentQIndex === currentSet.questions.length - 1
+                        ? 'Next Passage →'
+                        : 'Next Question'
+                    } <ArrowRight size={12} />
+                  </button>
+                )}
+              </div>
+
+              {hasChecked && (
+                <div className={`p-3 rounded border text-xs font-sans space-y-1 ${
+                  selectedOption === currentQ.correctAnswerIndex
+                    ? 'bg-[#f0f9f4] border-[#2ebd6e]/20 text-[#195c36]'
+                    : 'bg-[#fdf3f3] border-red-200/30 text-[#6a1d1d]'
+                }`}>
+                  <span className="font-bold flex items-center gap-1 text-[9px] uppercase tracking-wider">
+                    {selectedOption === currentQ.correctAnswerIndex
+                      ? <><CheckCircle2 size={12} /> Correct</>
+                      : <><XCircle size={12} /> Incorrect</>
+                    }
+                  </span>
+                  <p className="leading-relaxed text-xs text-[#37352f]/90">{currentQ.explanation}</p>
+                </div>
               )}
             </div>
-
-            {/* Explanation rationale overlay */}
-            {hasCheckedCurrent && (
-              <div className={`p-3 rounded border text-xs font-sans space-y-1 ${
-                selectedOption === questions[currentIndex].correctAnswerIndex
-                  ? 'bg-[#f0f9f4] border-[#2ebd6e]/20 text-[#195c36]'
-                  : 'bg-[#fdf3f3] border-red-200/30 text-[#6a1d1d]'
-              }`} id="quiz-explanation-box">
-                <span className="font-bold flex items-center gap-1 text-[9px] uppercase tracking-wider">
-                  {selectedOption === questions[currentIndex].correctAnswerIndex ? (
-                    <span className="text-[#195c36] flex items-center gap-1"><CheckCircle2 size={12} /> Correct acquisition</span>
-                  ) : (
-                    <span className="text-[#6a1d1d] flex items-center gap-1"><XCircle size={12} /> ENCOUNTERED FALSE SCHEME</span>
-                  )}
-                </span>
-                <p className="leading-relaxed opacity-95 text-xs text-[#37352f]/90">
-                  {questions[currentIndex].explanation}
-                </p>
-              </div>
-            )}
-
           </div>
         </div>
       )}
 
-      {/* Quiz Finished View */}
+      {/* Finished */}
       {quizFinished && (
-        <div className="bg-white border border-[#e4e4e3] rounded-md p-6 space-y-5 max-w-2xl mx-auto shadow-[0_1px_3px_rgba(15,15,15,0.05)] text-center" id="quiz-finished-view">
+        <div className="bg-white border border-[#e4e4e3] rounded-md p-6 space-y-5 max-w-2xl mx-auto shadow-[0_1px_3px_rgba(15,15,15,0.05)] text-center">
           <div className="inline-flex p-3 bg-[#f7f7f5] border border-[#e4e4e3] text-[#37352f]/70 rounded-full">
             <Award size={28} />
           </div>
 
           <div className="space-y-0.5">
-            <h2 className="text-sm font-bold text-[#37352f] font-sans tracking-tight">Interleaved Trial Completed!</h2>
-            <p className="text-xs text-[#37352f]/60 font-sans">You have submitted responses for all 5 interleaved questions.</p>
+            <h2 className="text-sm font-bold text-[#37352f] font-sans">Weekly Quiz Complete</h2>
+            <p className="text-xs text-[#37352f]/60 font-sans">{passageSets.length} passages · {totalQuestions} questions</p>
           </div>
 
-          <div className="py-3 border-y border-[#e4e4e3] grid grid-cols-2 gap-4 max-w-xs mx-auto text-xs" id="score-block">
+          <div className="py-3 border-y border-[#e4e4e3] grid grid-cols-2 gap-4 max-w-xs mx-auto text-xs">
             <div className="text-center">
               <span className="text-[9px] text-[#37352f]/50 block uppercase font-bold">Accuracy</span>
               <span className="text-xl font-bold text-[#37352f] block mt-0.5">{scorePercentage}%</span>
             </div>
             <div className="text-center border-l border-[#e4e4e3]">
-              <span className="text-[9px] text-[#37352f]/50 block uppercase font-bold">Raw score</span>
-              <span className="text-xl font-bold text-[#37352f] block mt-0.5">{correctCount} <span className="text-xs text-[#37352f]/40">/ 5</span></span>
+              <span className="text-[9px] text-[#37352f]/50 block uppercase font-bold">Score</span>
+              <span className="text-xl font-bold text-[#37352f] block mt-0.5">{totalCorrect} <span className="text-xs text-[#37352f]/40">/ {totalQuestions}</span></span>
             </div>
           </div>
 
-          {/* Quick analysis summary */}
-          <div className="p-3 bg-[#f7f7f5] border border-[#e4e4e3] rounded-md text-left text-xs space-y-1 max-w-md mx-auto leading-normal text-[#37352f]/70" id="quiz-recap font-sans">
-            <span className="font-bold text-[#37352f]/40 uppercase tracking-wider text-[8px] block font-sans">Performance evaluation:</span>
-            {scorePercentage >= 80 ? (
-              <p className="text-[11px]">Excellent active processing! Scrambling clinical schemas was successful. Track due SRS intervals on scheduled times.</p>
-            ) : (
-              <p className="text-[11px]">Valuable review points discovered. Return to Socratic coach to map unresolved variable gaps before generating fresh quizzes.</p>
-            )}
+          {/* Per-passage breakdown */}
+          <div className="space-y-2 text-left max-w-md mx-auto">
+            <span className="font-bold text-[#37352f]/40 uppercase tracking-wider text-[9px] block font-sans">Passage Breakdown:</span>
+            {passageSets.map((set, si) => {
+              const correct = set.questions.reduce((a, q, qi) => a + (answers[si]?.[qi] === q.correctAnswerIndex ? 1 : 0), 0);
+              const pct = Math.round((correct / set.questions.length) * 100);
+              return (
+                <div key={si} className="flex items-center justify-between bg-[#f7f7f5] border border-[#e4e4e3] rounded px-3 py-2 text-xs">
+                  <span className="font-medium text-[#37352f]/70 truncate max-w-[60%]">{set.skillName}</span>
+                  <span className={`font-bold ${pct >= 75 ? 'text-[#2ebd6e]' : pct >= 50 ? 'text-[#d97706]' : 'text-red-500'}`}>
+                    {correct}/{set.questions.length} ({pct}%)
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="p-3 bg-[#f7f7f5] border border-[#e4e4e3] rounded-md text-left text-xs max-w-md mx-auto leading-normal text-[#37352f]/70">
+            {scorePercentage >= 80
+              ? <p>Strong performance across all passages. Keep building your streak in Socratic sessions.</p>
+              : <p>Return to Socratic coaching for any passages below 75% — revisit the concept and generate a new mastery set before the next weekly quiz.</p>
+            }
           </div>
 
           <button
             onClick={handleStartQuiz}
             type="button"
             className="px-5 py-1.5 bg-[#37352f] hover:bg-[#2c2b27] text-white text-xs font-semibold font-sans rounded transition cursor-pointer"
-            id="synth-another-btn"
           >
-            Synthesize New Interleaved Trial
+            Generate New Weekly Quiz
           </button>
         </div>
       )}
