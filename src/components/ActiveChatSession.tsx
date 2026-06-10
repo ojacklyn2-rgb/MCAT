@@ -292,7 +292,10 @@ export function ActiveChatSession({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           microSkillName: session.microSkill?.name,
-          microSkillDescription: session.microSkill?.description
+          microSkillDescription: session.microSkill?.description,
+          conceptSummary: session.conceptSummary,
+          originalMistake: session.errorInputText,
+          section: session.section || 'CP'
         })
       });
 
@@ -383,7 +386,10 @@ export function ActiveChatSession({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             microSkillName: session.microSkill?.name,
-            microSkillDescription: session.microSkill?.description
+            microSkillDescription: session.microSkill?.description,
+            conceptSummary: session.conceptSummary,
+            originalMistake: session.errorInputText,
+            section: session.section || 'CP'
           })
         });
 

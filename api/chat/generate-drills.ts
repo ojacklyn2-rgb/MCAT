@@ -64,7 +64,7 @@ Topics allowed: learning, memory, cognition, emotion, motivation, development, s
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { microSkillName, microSkillDescription, section = "CP" } = req.body;
+  const { microSkillName, microSkillDescription, conceptSummary, originalMistake, section = "CP" } = req.body;
   if (!microSkillName) return res.status(400).json({ error: "Missing micro-skill name." });
 
   const ctx = SECTION_CONTEXT[section] || SECTION_CONTEXT["CP"];
@@ -109,10 +109,16 @@ JSON OUTPUT FORMAT
   ]
 }`;
 
-  const userPrompt = `Write a ${ctx.label} passage and 5 questions for this micro-skill:
-"${microSkillName}" — ${microSkillDescription || ""}
+  const userPrompt = `Write a ${ctx.label} passage and 5 questions targeting this specific concept gap:
 
-REMINDER: The passage must be 300–600 words across 4-6 paragraphs. Return valid JSON only.`;
+MICRO-SKILL: "${microSkillName}"
+DESCRIPTION: ${microSkillDescription || ""}
+${conceptSummary ? `\nCONCEPT THE STUDENT JUST LEARNED:\n${conceptSummary}` : ""}
+${originalMistake ? `\nORIGINAL MISTAKE THE STUDENT MADE:\n${originalMistake}` : ""}
+
+The passage and questions MUST directly test the concept described above. The passage scenario should be a novel application of that same concept so the student must transfer their understanding to a new context — not just repeat what they saw before.
+
+REMINDER: Passage must be 300–600 words. Return valid JSON only.`;
 
   try {
     const completion = await groq.chat.completions.create({
