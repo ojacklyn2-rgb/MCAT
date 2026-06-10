@@ -6,6 +6,51 @@ import { SpacedRepetitionDeck } from './components/SpacedRepetitionDeck';
 import { InterleavingQuizRunner } from './components/InterleavingQuizRunner';
 import { BookOpen, Layers, Sparkles, MessageSquare, Plus, PenTool, Trash2, Award, LogOut, LayoutDashboard } from 'lucide-react';
 
+// Seeding standard initial data if local storage is clean
+const SEED_MICRO_SKILLS: MicroSkill[] = [
+  {
+    id: 'seed_HH',
+    name: 'Logarithmic estimation of pH in buffers using Henderson-Hasselbalch under speed pressure',
+    description: 'Confusion when approximation log values without a calculator (e.g., log of 0.05 or estimating ratio outputs above 1).',
+    broadTopic: 'Chemistry/Physics - Solutions',
+    masteryStreak: 1,
+    unresolvedCount: 2
+  },
+  {
+    id: 'seed_Galvanic',
+    name: 'Distinguishing galvanic vs electrolytic salt bridge charge direction and anode terminals',
+    description: 'Misunderstanding charge flow and why anodes are negative in galvanic systems but positive in electrolytic cells.',
+    broadTopic: 'Chemistry/Physics - Electrochemistry',
+    masteryStreak: 3,
+    masteredAt: Date.now() - 2 * 24 * 60 * 60 * 1000,
+    unresolvedCount: 1
+  },
+  {
+    id: 'seed_Enzymes',
+    name: 'Interpreting Competitive vs Mixed Enzyme Inhibition plot intersections (Vmax and Km)',
+    description: 'Translating Lineweaver-Burk intersections when alpha and alpha-prime parameters differ.',
+    broadTopic: 'Biology/Biochemistry - Enzyme Kinetics',
+    masteryStreak: 2,
+    unresolvedCount: 1
+  }
+];
+
+const SEED_FLASHCARDS: Flashcard[] = [
+  {
+    id: 'seed_fc_1',
+    microSkillId: 'seed_Galvanic',
+    microSkillName: 'Distinguishing galvanic vs electrolytic salt bridge charge direction and anode terminals',
+    format: 'basic',
+    front: 'Does the anode carry a negative or positive charge in an electrolytic cell compared to a galvanic cell, and why?',
+    back: 'Galvanic Cell: Anode is negative because oxidation occurs spontaneously releasing electrons. Electrolytic Cell: Anode is positive because an external voltage source withdraws electrons, forcing oxidation at the anode.',
+    userExplanationCheck: 'Anodes are always sites of oxidation. Spontaneous galvanic releases electrons (negative anode); nonspontaneous electrolytic pulls them away (positive anode).',
+    createdAt: Date.now() - 24 * 60 * 60 * 1000 * 2,
+    repetitions: 1,
+    interval: 1,
+    easeFactor: 2.5,
+    nextReviewDate: Date.now() - 1000 // due now
+  }
+];
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
@@ -21,47 +66,35 @@ export default function App() {
       const storedFlashcards = localStorage.getItem('mcat_mastery_flashcards');
       const storedSkills = localStorage.getItem('mcat_mastery_skills');
 
-      const now = Date.now();
-      const SECTION_DEFAULTS: { id: string; section: MCATSection; title: string }[] = [
-        { id: 'pinned_CP',   section: 'CP',   title: 'Chem / Phys (C/P)' },
-        { id: 'pinned_CARS', section: 'CARS', title: 'CARS' },
-        { id: 'pinned_BB',   section: 'BB',   title: 'Bio / Biochem (B/B)' },
-        { id: 'pinned_PS',   section: 'PS',   title: 'Psych / Soc (P/S)' },
-      ];
-
-      let existing: ChatSession[] = storedSessions ? JSON.parse(storedSessions) : [];
-
-      // Ensure all 4 section sessions always exist (add any missing ones)
-      SECTION_DEFAULTS.forEach((def, i) => {
-        const has = existing.some(s => s.id === def.id || s.section === def.section);
-        if (!has) {
-          existing = [{
-            id: def.id,
-            title: def.title,
-            createdAt: now - i,
-            section: def.section,
-            stage: 'intake',
-            messages: [],
-            drills: [],
-            drillStreak: 0,
-            drillHistory: []
-          }, ...existing];
-        }
-      });
-
-      setSessions(existing);
-      setActiveSessionId(existing[0].id);
+      if (storedSessions) {
+        setSessions(JSON.parse(storedSessions));
+      } else {
+        // Setup initial default study session to welcome student
+        const firstSessionId = `session_${Date.now()}`;
+        const defaultSession: ChatSession = {
+          id: firstSessionId,
+          title: 'Acid/Base Log Estimation Study',
+          createdAt: Date.now(),
+          stage: 'intake',
+          messages: [],
+          drills: [],
+          drillStreak: 0,
+          drillHistory: []
+        };
+        setSessions([defaultSession]);
+        setActiveSessionId(firstSessionId);
+      }
 
       if (storedFlashcards) {
         setFlashcards(JSON.parse(storedFlashcards));
       } else {
-        setFlashcards([]);
+        setFlashcards(SEED_FLASHCARDS);
       }
 
       if (storedSkills) {
         setMicroSkills(JSON.parse(storedSkills));
       } else {
-        setMicroSkills([]);
+        setMicroSkills(SEED_MICRO_SKILLS);
       }
     } catch (e) {
       console.error('Error loading localStorage:', e);
@@ -257,7 +290,7 @@ export default function App() {
           <div className="grid grid-cols-1 md:grid-cols-12 gap-6 max-w-7xl mx-auto px-6" id="sessions-layout-container">
             
             {/* Left sidebar containing session lists */}
-            <div className="md:col-span-2 space-y-4 bg-[#f7f7f5] p-3.5 border border-[#e4e4e3] rounded-lg h-fit" id="chats-sidebar">
+            <div className="md:col-span-3 space-y-4 bg-[#f7f7f5] p-3.5 border border-[#e4e4e3] rounded-lg h-fit" id="chats-sidebar">
               <div className="flex justify-between items-center pb-2 border-b border-[#e4e4e3]" id="sidebar-action">
                 <span className="text-xs font-bold text-[#37352f]/70 font-sans tracking-wide">STUDY SESSIONS</span>
                 <button
@@ -329,7 +362,7 @@ export default function App() {
             </div>
 
             {/* Right main workspace loading the active chat */}
-            <div className="md:col-span-10" id="active-dialogue-col">
+            <div className="md:col-span-9" id="active-dialogue-col">
               {activeSessionId && activeSessionObj ? (
                 <ActiveChatSession
                   key={activeSessionId}
@@ -362,6 +395,7 @@ export default function App() {
           <InterleavingQuizRunner
             microSkills={microSkills}
             sessions={sessions}
+            onUpdateMicroSkill={handleUpdateMicroSkill}
           />
         )}
 
