@@ -35,10 +35,11 @@ export function ActiveChatSession({
   const [activeDrillIndex, setActiveDrillIndex] = useState(0);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [hasSubmittedAnswer, setHasSubmittedAnswer] = useState(false);
+  const [confidence, setConfidence] = useState<'low' | 'medium' | 'high' | null>(null);
 
-  // Timer state
-  const QUESTION_TIME = 90; // seconds per question
-  const [timeLeft, setTimeLeft] = useState(QUESTION_TIME);
+  // Set-level timer: 8 minutes for the whole question set
+  const SET_TIME = 8 * 60; // 480 seconds
+  const [timeLeft, setTimeLeft] = useState(SET_TIME);
   const [timerExpired, setTimerExpired] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -55,10 +56,10 @@ export function ActiveChatSession({
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [session.messages]);
 
-  // Timer: reset and start on each new drill question
+  // Set-level timer: starts when drills begin, counts down 8 min for the whole set
   useEffect(() => {
-    if (session.stage !== 'mastery' || hasSubmittedAnswer) return;
-    setTimeLeft(QUESTION_TIME);
+    if (session.stage !== 'mastery') return;
+    setTimeLeft(SET_TIME);
     setTimerExpired(false);
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
@@ -72,20 +73,45 @@ export function ActiveChatSession({
       });
     }, 1000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [activeDrillIndex, session.stage, hasSubmittedAnswer]);
+  }, [session.drills]); // reset only when a new drill set loads
 
-  // Stop timer when answer submitted
+  // Reset confidence when moving to a new question
   useEffect(() => {
-    if (hasSubmittedAnswer && timerRef.current) {
-      clearInterval(timerRef.current);
-    }
-  }, [hasSubmittedAnswer]);
-
-  // Reset drill chat when moving to new question
-  useEffect(() => {
+    setConfidence(null);
     setDrillChatMessages([]);
     setDrillChatText('');
   }, [activeDrillIndex]);
+
+  // Handle Drag & Drop / Image Selection
+  const handleImageUpload = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      alert('Pease select an image file (PNG, JPG, etc.).');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setInputImage(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      handleImageUpload(e.target.files[0]);
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const blob = items[i].getAsFile();
+        if (blob) handleImageUpload(blob);
+      }
+    }
+  };
 
   // Post-answer drill discussion
   const handleDrillChatSend = async (e: React.FormEvent) => {
@@ -116,37 +142,6 @@ export function ActiveChatSession({
       setDrillChatMessages(prev => [...prev, { role: 'ai', text: 'Error getting response. Try again.' }]);
     } finally {
       setIsDrillChatLoading(false);
-    }
-  };
-
-  // Handle Drag & Drop / Image Selection
-  const handleImageUpload = (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      alert('Pease select an image file (PNG, JPG, etc.).');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setInputImage(reader.result);
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      handleImageUpload(e.target.files[0]);
-    }
-  };
-
-  const handlePaste = (e: React.ClipboardEvent) => {
-    const items = e.clipboardData.items;
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].type.indexOf('image') !== -1) {
-        const blob = items[i].getAsFile();
-        if (blob) handleImageUpload(blob);
-      }
     }
   };
 
@@ -297,8 +292,7 @@ export function ActiveChatSession({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           microSkillName: session.microSkill?.name,
-          microSkillDescription: session.microSkill?.description,
-          section: session.section || 'CP'
+          microSkillDescription: session.microSkill?.description
         })
       });
 
@@ -307,19 +301,11 @@ export function ActiveChatSession({
       }
 
       const data = await response.json();
-      // Attach questionNumber as id if missing
-      const drills = (data.drills || []).map((d: any, i: number) => ({
-        ...d,
-        id: d.id || `drill_${Date.now()}_${i}`,
-        microSkill: session.microSkill?.name || ''
-      }));
-
+      
       onUpdateSession({
         ...session,
         stage: 'mastery',
-        drills,
-        drillPassage: data.passage || '',
-        drillPassageTitle: data.passageTitle || 'Passage 1 (Questions 1–4)',
+        drills: data.drills,
         drillStreak: 0,
         drillHistory: []
       });
@@ -342,6 +328,7 @@ export function ActiveChatSession({
 
     const currentDrill = session.drills[activeDrillIndex];
     const isCorrect = selectedOption === currentDrill.correctAnswerIndex;
+    let newStreak = isCorrect ? session.drillStreak + 1 : 0;
 
     setHasSubmittedAnswer(true);
 
@@ -352,9 +339,21 @@ export function ActiveChatSession({
 
     onUpdateSession({
       ...session,
-      drillStreak: isCorrect ? session.drillStreak + 1 : session.drillStreak,
+      drillStreak: newStreak,
       drillHistory: [...session.drillHistory, historyItem]
     });
+
+    // Update the microskill's overall diagnostic tracker
+    if (session.microSkill) {
+      const updatedSkill = {
+        ...session.microSkill,
+        masteryStreak: newStreak
+      };
+      if (newStreak >= 3) {
+        updatedSkill.masteredAt = Date.now();
+      }
+      onUpdateMicroSkill(updatedSkill);
+    }
   };
 
   const handleNextDrill = async () => {
@@ -362,57 +361,46 @@ export function ActiveChatSession({
     setHasSubmittedAnswer(false);
 
     const nextIdx = activeDrillIndex + 1;
-    const isLastQuestion = nextIdx >= session.drills.length;
 
-    if (isLastQuestion) {
-      // Check 80% threshold on the completed set
-      const setSize = session.drills.length;
-      const setHistory = session.drillHistory.slice(-setSize);
-      const correctCount = setHistory.filter(h => h.correct).length;
+    if (session.drillStreak >= 3) {
+      // Completed mastery! Go to flashcard
+      onUpdateSession({
+        ...session,
+        stage: 'flashcard'
+      });
+      return;
+    }
 
-      if (correctCount / setSize >= 0.8) {
-        if (session.microSkill) {
-          onUpdateMicroSkill({ ...session.microSkill, masteredAt: Date.now() });
-        }
-        onUpdateSession({ ...session, stage: 'flashcard' });
-      } else {
-        // Below 80% — generate a new passage set
-        setIsLoading(true);
-        setLoadingStep(`${correctCount}/${setSize} correct — need 80%. Generating a new passage set...`);
-        try {
-          const response = await fetch('/api/chat/generate-drills', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              microSkillName: session.microSkill?.name,
-              microSkillDescription: session.microSkill?.description,
-              section: session.section || 'CP'
-            })
-          });
-          if (!response.ok) throw new Error('Failed generating fresh drills.');
-          const data = await response.json();
-          const drills = (data.drills || []).map((d: any, i: number) => ({
-            ...d,
-            id: d.id || `drill_${Date.now()}_${i}`,
-            microSkill: session.microSkill?.name || ''
-          }));
-          onUpdateSession({
-            ...session,
-            drills,
-            drillPassage: data.passage || '',
-            drillPassageTitle: data.passageTitle || 'New Passage',
-            drillStreak: 0
-          });
-          setActiveDrillIndex(0);
-        } catch (err: any) {
-          alert(err.message);
-        } finally {
-          setIsLoading(false);
-          setLoadingStep('');
-        }
-      }
-    } else {
+    if (nextIdx < session.drills.length) {
       setActiveDrillIndex(nextIdx);
+    } else {
+      // Run out of drills but streak hasn't hit 3. Student must generate another batch!
+      setIsLoading(true);
+      setLoadingStep('Compiling replacement set of difficult 520+ MCQs to continue streak...');
+      try {
+        const response = await fetch('/api/chat/generate-drills', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            microSkillName: session.microSkill?.name,
+            microSkillDescription: session.microSkill?.description
+          })
+        });
+
+        if (!response.ok) throw new Error('Failed generating fresh drills.');
+
+        const data = await response.json();
+        onUpdateSession({
+          ...session,
+          drills: data.drills
+        });
+        setActiveDrillIndex(0);
+      } catch (err: any) {
+        alert(err.message);
+      } finally {
+        setIsLoading(false);
+        setLoadingStep('');
+      }
     }
   };
 
@@ -634,28 +622,12 @@ export function ActiveChatSession({
         {/* ==================== STAGE 2: SOCRATIC CHAT ==================== */}
         {session.stage === 'socratic' && (
           <div className="flex flex-col space-y-4" id="socratic-chat-section">
-
-            {/* Concept Explanation Card — shown immediately on intake */}
-            {session.conceptSummary && (
-              <div className="bg-[#fffdf5] border border-[#e8e0c0] rounded-md p-4 space-y-2" id="concept-explanation-card">
-                <div className="flex items-center gap-2 pb-1.5 border-b border-[#e8e0c0]">
-                  <BookOpen size={13} className="text-amber-700 shrink-0" />
-                  <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider">Concept Gap Identified — {session.microSkill?.broadTopic}</span>
-                </div>
-                <h3 className="font-bold text-[#37352f] text-xs">{session.microSkill?.name}</h3>
-                <p className="text-xs text-[#37352f]/80 leading-relaxed whitespace-pre-line">{session.conceptSummary}</p>
-              </div>
-            )}
-
-            {/* Scrollable chat history — Socratic dialogue only */}
-            <div className="bg-white border border-[#e4e4e3] p-4 rounded-md h-[380px] overflow-y-auto flex flex-col space-y-3.5" id="chat-messages-box">
+            
+            {/* Scrollable chat history */}
+            <div className="bg-white border border-[#e4e4e3] p-4 rounded-md h-[450px] overflow-y-auto flex flex-col space-y-3.5" id="chat-messages-box">
               {session.messages.map((msg) => {
                 const isAsst = msg.sender === 'assistant';
-                // For the first assistant message, only show the socratic question part (skip concept summary already shown above)
-                const displayText = isAsst && msg.text.includes('Diagnostic Socratic Question:')
-                  ? msg.text.split('**Diagnostic Socratic Question:**').pop()?.trim() || msg.text
-                  : msg.text;
-
+                
                 return (
                   <div
                     key={msg.id}
@@ -666,17 +638,23 @@ export function ActiveChatSession({
                       isAsst ? 'bg-[#f7f7f5] border-[#e4e4e3] text-[#37352f]' : 'bg-[#efeee3] border-[#e4e4e3] text-[#37352f] font-medium'
                     }`} id={`message-content-${msg.id}`}>
                       {isAsst ? (
+                        // Basic custom rendering for markdown lines
                         <div className="space-y-2 whitespace-pre-wrap">
-                          {displayText.split('\n\n').map((paragraph, pIdx) => {
-                            const markedText = paragraph.split('**').map((tok, tIdx) => (
-                              tIdx % 2 === 1 ? <strong key={tIdx} className="font-bold text-zinc-950">{tok}</strong> : tok
-                            ));
+                          {msg.text.split('\n\n').map((paragraph, pIdx) => {
+                            if (paragraph.startsWith('**') && paragraph.endsWith('**')) {
+                              return <h4 key={pIdx} className="font-bold text-[#37352f] flex items-center gap-1.5">{paragraph.replace(/\*\*/g, '')}</h4>;
+                            }
+                            // highlights bold words
+                            const markedText = paragraph.split('**').map((tok, tIdx) => {
+                              return tIdx % 2 === 1 ? <strong key={tIdx} className="font-bold text-zinc-950">{tok}</strong> : tok;
+                            });
                             return <p key={pIdx} className="text-[#37352f]/90 leading-relaxed text-xs sm:text-sm">{markedText}</p>;
                           })}
                         </div>
                       ) : (
                         <p className="whitespace-pre-wrap text-xs sm:text-sm">{msg.text}</p>
                       )}
+                      
                       <div className={`text-[9px] mt-1 font-sans ${isAsst ? 'text-[#37352f]/45' : 'text-[#37352f]/50 text-right'}`}>
                         {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </div>
@@ -693,7 +671,7 @@ export function ActiveChatSession({
                 type="text"
                 value={messageText}
                 onChange={(e) => setMessageText(e.target.value)}
-                placeholder="Respond to the Socratic question, explain your thinking..."
+                placeholder="Type your explanation, respond to the Socratic challenge..."
                 className="flex-1 p-2.5 border border-[#e4e4e3] rounded font-sans text-xs focus:outline-none focus:border-zinc-400 bg-white"
                 id="chat-input-field"
               />
@@ -714,7 +692,7 @@ export function ActiveChatSession({
                 <div className="space-y-0.5">
                   <h4 className="font-bold text-[#37352f] font-sans text-xs">Ready for Active Rigor?</h4>
                   <p className="text-[11px] text-[#37352f]/60 font-sans">
-                    Once you've aligned the concept with the Coach, work through the full passage question set to advance.
+                    Once you've aligned the concept variables with the Coach, lock in understanding by starting the 3-streak drills.
                   </p>
                 </div>
               </div>
@@ -732,40 +710,39 @@ export function ActiveChatSession({
         {/* ==================== STAGE 3: MASTERY DRILLS ==================== */}
         {session.stage === 'mastery' && session.drills && session.drills.length > 0 && (
           <div className="bg-white border border-[#e4e4e3] rounded-md shadow-[0_1px_2px_rgba(15,15,15,0.05)] overflow-hidden" id="mastery-drills-panel">
-            
-            {/* Top bar: passage title + streak + timer */}
+
+            {/* Top bar: passage title + score + set timer */}
             <div className="flex justify-between items-center px-4 py-2.5 bg-[#37352f] text-white" id="drills-stat-header">
-              <div className="flex items-center gap-3">
-                <span className="text-[10px] font-bold tracking-wider uppercase opacity-80">{session.drillPassageTitle || 'Passage 1 (Questions 1–4)'}</span>
-                <span className="text-[10px] opacity-50">|</span>
-                <span className="text-[10px] opacity-70">Q {activeDrillIndex + 1} of {session.drills.length}</span>
-                <span className="text-[10px] opacity-50">·</span>
-                <span className={`text-[10px] font-mono ${session.drillStreak / session.drills.length >= 0.8 ? 'text-[#2ebd6e]' : 'text-white/60'}`}>
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="text-[10px] font-bold tracking-wider uppercase opacity-80 truncate">{session.drillPassageTitle || 'Passage 1 (Questions 1–5)'}</span>
+                <span className="text-[10px] opacity-40">|</span>
+                <span className="text-[10px] opacity-70 whitespace-nowrap">Q {activeDrillIndex + 1} of {session.drills.length}</span>
+                <span className="text-[10px] opacity-40">·</span>
+                <span className={`text-[10px] font-mono whitespace-nowrap ${session.drillStreak / session.drills.length >= 0.8 ? 'text-[#2ebd6e]' : 'text-white/60'}`}>
                   {session.drillStreak}/{session.drills.length} correct · need ≥80%
                 </span>
               </div>
-              {!hasSubmittedAnswer && (
-                <div className={`font-mono text-xs font-bold px-2.5 py-0.5 rounded transition-colors ${
-                  timerExpired ? 'bg-red-500 text-white' :
-                  timeLeft <= 20 ? 'bg-orange-400 text-white' :
-                  timeLeft <= 45 ? 'bg-yellow-400 text-[#37352f]' :
-                  'bg-white/10 text-white'
-                }`}>
-                  {timerExpired ? 'TIME' : `${Math.floor(timeLeft/60)}:${String(timeLeft%60).padStart(2,'0')}`}
-                </div>
-              )}
+              <div className={`font-mono text-xs font-bold px-2.5 py-0.5 rounded shrink-0 ml-3 ${
+                timerExpired ? 'bg-red-500 text-white' :
+                timeLeft <= 60 ? 'bg-orange-400 text-[#37352f]' :
+                timeLeft <= 120 ? 'bg-yellow-400 text-[#37352f]' :
+                'bg-white/10 text-white'
+              }`}>
+                {timerExpired ? 'TIME' : `${Math.floor(timeLeft/60)}:${String(timeLeft%60).padStart(2,'0')}`}
+              </div>
             </div>
 
-            {/* AAMC Split Layout: Passage LEFT | Question RIGHT */}
+            {/* AAMC Split Layout: Passage LEFT (narrower) | Question RIGHT (wider) */}
             {(() => {
               const currentDrill = session.drills[activeDrillIndex];
               if (!currentDrill) return <div className="text-center text-xs text-[#37352f]/50 py-12 p-6">Loading question...</div>;
+              const isCorrect = selectedOption === currentDrill.correctAnswerIndex;
 
               return (
-                <div className="flex flex-col lg:flex-row min-h-[520px]" id={`drill-item-${activeDrillIndex}`}>
+                <div className="flex flex-col lg:flex-row min-h-[560px]" id={`drill-item-${activeDrillIndex}`}>
 
-                  {/* LEFT: Passage panel */}
-                  <div className="lg:w-[45%] border-b lg:border-b-0 lg:border-r border-[#e4e4e3] bg-[#fafaf8] p-5 overflow-y-auto" id="passage-panel">
+                  {/* LEFT: Passage panel — 35% */}
+                  <div className="lg:w-[35%] border-b lg:border-b-0 lg:border-r border-[#e4e4e3] bg-[#fafaf8] p-5 overflow-y-auto" id="passage-panel">
                     <div className="space-y-3">
                       <div className="flex items-center gap-1.5 pb-2 border-b border-[#e4e4e3]">
                         <FileText size={11} className="text-[#37352f]/40 shrink-0" />
@@ -774,13 +751,13 @@ export function ActiveChatSession({
                         </span>
                       </div>
                       <p className="text-xs text-[#37352f]/85 font-sans leading-relaxed whitespace-pre-line">
-                        {session.drillPassage || currentDrill.passage || ''}
+                        {session.drillPassage || ''}
                       </p>
                     </div>
                   </div>
 
-                  {/* RIGHT: Question panel */}
-                  <div className="lg:w-[55%] p-5 flex flex-col gap-4 overflow-y-auto" id="question-panel">
+                  {/* RIGHT: Question panel — 65% */}
+                  <div className="lg:w-[65%] p-5 flex flex-col gap-4 overflow-y-auto" id="question-panel">
 
                     {/* Question number + text */}
                     <div className="space-y-2">
@@ -793,12 +770,12 @@ export function ActiveChatSession({
                       {currentDrill.options.map((option, idx) => {
                         const letters = ['A','B','C','D'];
                         const isSelected = selectedOption === idx;
-                        const isCorrect = idx === currentDrill.correctAnswerIndex;
+                        const isCorrectAnswer = idx === currentDrill.correctAnswerIndex;
                         let cls = "border-[#e4e4e3] bg-white hover:bg-[#f7f7f5]";
                         let badge = "bg-[#f1f1ef] text-[#37352f]";
                         if (isSelected && !hasSubmittedAnswer) { cls = "border-[#37352f] bg-[#efeee3]"; badge = "bg-[#37352f] text-white"; }
                         if (hasSubmittedAnswer) {
-                          if (isCorrect) { cls = "border-green-400 bg-green-50"; badge = "bg-green-500 text-white"; }
+                          if (isCorrectAnswer) { cls = "border-green-400 bg-green-50"; badge = "bg-green-500 text-white"; }
                           else if (isSelected) { cls = "border-red-400 bg-red-50"; badge = "bg-red-500 text-white"; }
                           else { cls = "border-[#e4e4e3] bg-white opacity-40"; }
                         }
@@ -812,10 +789,33 @@ export function ActiveChatSession({
                       })}
                     </div>
 
+                    {/* Confidence selector — shown before submit */}
+                    {!hasSubmittedAnswer && (
+                      <div className="space-y-1.5">
+                        <span className="text-[9px] font-bold text-[#37352f]/40 uppercase tracking-wider block">Confidence Level</span>
+                        <div className="flex gap-2">
+                          {(['low','medium','high'] as const).map(lvl => (
+                            <button key={lvl} type="button" onClick={() => setConfidence(lvl)}
+                              className={`px-3 py-1 rounded text-[11px] font-semibold border transition-all cursor-pointer capitalize ${
+                                confidence === lvl
+                                  ? lvl === 'low' ? 'bg-red-100 border-red-400 text-red-700'
+                                  : lvl === 'medium' ? 'bg-yellow-100 border-yellow-400 text-yellow-700'
+                                  : 'bg-green-100 border-green-400 text-green-700'
+                                  : 'bg-white border-[#e4e4e3] text-[#37352f]/50 hover:bg-[#f7f7f5]'
+                              }`}>
+                              {lvl === 'low' ? '🔴 Low' : lvl === 'medium' ? '🟡 Medium' : '🟢 High'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Submit / Next */}
                     <div className="flex justify-end pt-1">
                       {!hasSubmittedAnswer ? (
-                        <button type="button" disabled={selectedOption === null} onClick={handleAnswerSubmit}
+                        <button type="button"
+                          disabled={selectedOption === null || confidence === null}
+                          onClick={handleAnswerSubmit}
                           className="px-5 py-2 bg-[#37352f] hover:bg-[#2c2b27] text-white rounded font-sans text-xs font-semibold disabled:opacity-40 cursor-pointer transition-all">
                           Submit Answer
                         </button>
@@ -827,19 +827,34 @@ export function ActiveChatSession({
                       )}
                     </div>
 
-                    {/* Explanation after answer */}
+                    {/* Concept gap explanation after submission */}
                     {hasSubmittedAnswer && (
                       <div className="space-y-3 border-t border-[#e4e4e3] pt-3">
-                        <div className={`p-3.5 rounded-md border text-xs font-sans space-y-1.5 ${
-                          selectedOption === currentDrill.correctAnswerIndex
-                            ? 'bg-[#f0f9f4] border-green-200 text-[#1b5d38]'
-                            : 'bg-[#fdf3f3] border-red-200 text-[#6b2121]'
-                        }`}>
-                          <div className="flex items-center gap-1.5 font-bold text-[9px] uppercase tracking-wider">
-                            {selectedOption === currentDrill.correctAnswerIndex
-                              ? <><CheckCircle2 size={11} /> Correct</>
-                              : <><XCircle size={11} /> Incorrect</>}
-                          </div>
+                        {/* Result + confidence tag */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded ${isCorrect ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                            {isCorrect ? <><CheckCircle2 size={10} /> Correct</> : <><XCircle size={10} /> Incorrect</>}
+                          </span>
+                          {confidence && (
+                            <span className={`text-[10px] px-2 py-0.5 rounded font-semibold ${
+                              confidence === 'low' ? 'bg-red-50 text-red-600' :
+                              confidence === 'medium' ? 'bg-yellow-50 text-yellow-700' :
+                              'bg-green-50 text-green-700'
+                            }`}>
+                              Confidence: {confidence}
+                            </span>
+                          )}
+                          {!isCorrect && confidence === 'high' && (
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-orange-50 text-orange-700 font-semibold">⚠ Overconfidence gap</span>
+                          )}
+                          {isCorrect && confidence === 'low' && (
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold">✓ Underestimated your knowledge</span>
+                          )}
+                        </div>
+
+                        {/* Concept gap explanation */}
+                        <div className={`p-3.5 rounded-md border text-xs font-sans space-y-2 ${isCorrect ? 'bg-[#f0f9f4] border-green-200' : 'bg-[#fdf3f3] border-red-200'}`}>
+                          <span className="text-[9px] font-bold uppercase tracking-wider block text-[#37352f]/50">Concept Gap Analysis</span>
                           <p className="leading-relaxed whitespace-pre-line text-[#37352f]/90">{currentDrill.explanation}</p>
                         </div>
 
@@ -881,7 +896,6 @@ export function ActiveChatSession({
                 </div>
               );
             })()}
-
           </div>
         )}
 
@@ -1082,29 +1096,22 @@ export function ActiveChatSession({
           </div>
         )}
 
-        {/* Source Question Panel — shows screenshot or pasted text */}
-        {(session.errorInputImage || session.errorInputText) && (
-          <div className="bg-white border border-[#e4e4e3] rounded-md p-3 space-y-2 shadow-[0_1px_2px_rgba(15,15,15,0.03)]" id="side-screenshot-panel">
-            <span className="font-semibold text-[#37352f]/50 block uppercase tracking-wider text-[8px] font-sans">Source Question</span>
-            {session.errorInputImage ? (
-              <>
-                <img
-                  src={session.errorInputImage}
-                  alt="Source Question"
-                  className="w-full max-h-36 object-cover object-top rounded border border-[#e4e4e3] cursor-zoom-in hover:opacity-90 transition-opacity"
-                  onClick={() => {
-                    const w = window.open();
-                    if (w) w.document.write(`<img src="${session.errorInputImage}" style="max-width:100%;height:auto;" />`);
-                  }}
-                  title="Click to view full size"
-                />
-                <p className="text-[9px] text-[#37352f]/40 font-sans text-center">Click to expand</p>
-              </>
-            ) : (
-              <p className="text-[11px] text-[#37352f]/70 font-sans leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto bg-[#f7f7f5] p-2.5 rounded border border-[#e4e4e3]">
-                {session.errorInputText}
-              </p>
-            )}
+        {/* Uploaded Incorrect Question Preview */}
+        {session.errorInputImage && (
+          <div className="bg-white border border-[#e4e4e3] rounded-md p-4 space-y-2 shadow-[0_1px_2px_rgba(15,15,15,0.03)]" id="side-screenshot-panel">
+            <span className="font-semibold text-[#37352f]/50 block uppercase tracking-wider text-[8px] font-sans">Source Error Screenshot</span>
+            <img
+              src={session.errorInputImage}
+              alt="Source Question"
+              className="w-full rounded border border-[#e4e4e3] shadow-xs cursor-zoom-in hover:opacity-95 transition-opacity"
+              onClick={() => {
+                const w = window.open();
+                if (w) {
+                  w.document.write(`<img src="${session.errorInputImage}" style="max-width:100%; height:auto;" />`);
+                }
+              }}
+              title="Click to view full-size image"
+            />
           </div>
         )}
       </div>
