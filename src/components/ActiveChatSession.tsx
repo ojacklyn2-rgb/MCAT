@@ -36,6 +36,7 @@ export function ActiveChatSession({
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [hasSubmittedAnswer, setHasSubmittedAnswer] = useState(false);
   const [confidence, setConfidence] = useState<'low' | 'medium' | 'high' | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Set-level timer: 8 minutes for the whole question set
   const SET_TIME = 8 * 60; // 480 seconds
@@ -486,8 +487,81 @@ export function ActiveChatSession({
     alert('Flashcard entered into Spaced Repetition deck. Session Mastery complete!');
   };
 
+  const sidebarContent = (
+    <div className="space-y-4 text-[#37352f]">
+      {session.microSkill ? (
+        <div className="bg-[#f7f7f5] border border-[#e4e4e3] rounded-md p-4 space-y-3.5">
+          <div className="space-y-0.5 pb-2 border-b border-[#e4e4e3]">
+            <span className="text-[9px] font-bold text-amber-600 block uppercase tracking-wider">Identified MCQ Diagnostic</span>
+            <h4 className="font-bold text-[#37352f] font-sans text-xs tracking-tight">Mastery Details</h4>
+          </div>
+          <div className="space-y-3 text-xs font-sans text-[#37352f]/70">
+            <div>
+              <span className="font-bold text-[#37352f]/40 block uppercase tracking-wider text-[8px]">Micro-Skill Concept</span>
+              <p className="font-bold text-[#37352f] mt-0.5">{session.microSkill.name}</p>
+            </div>
+            <div>
+              <span className="font-bold text-[#37352f]/40 block uppercase tracking-wider text-[8px]">MCAT Class</span>
+              <p className="font-semibold text-[#37352f]/80 mt-0.5">{session.microSkill.broadTopic}</p>
+            </div>
+            <div>
+              <span className="font-bold text-[#37352f]/40 block uppercase tracking-wider text-[8px]">Analytical Summary</span>
+              <p className="italic text-[#37352f]/60 leading-normal mt-0.5 text-[11px]">{session.microSkill.description}</p>
+            </div>
+            {session.conceptSummary && (
+              <div className="pt-3 border-t border-[#e4e4e3]">
+                <span className="font-bold text-[#37352f]/40 block uppercase tracking-wider text-[8px]">Memory Hook & Analogy</span>
+                <p className="mt-1 text-[#37352f]/70 leading-relaxed text-[11px]">{session.conceptSummary}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="bg-[#f7f7f5]/40 border border-[#e4e4e3] rounded-md p-5 text-center text-[#37352f]/40 text-xs font-sans py-10">
+          No micro-skill classified yet. Upload a wrong question to populate diagnostics.
+        </div>
+      )}
+      {(session.errorInputImage || session.errorInputText) && (
+        <div className="bg-white border border-[#e4e4e3] rounded-md p-3 space-y-2">
+          <span className="font-semibold text-[#37352f]/50 block uppercase tracking-wider text-[8px]">Source Question</span>
+          {session.errorInputImage ? (
+            <img src={session.errorInputImage} alt="Source" className="w-full rounded border border-[#e4e4e3] cursor-zoom-in hover:opacity-90 transition-opacity"
+              onClick={() => { const w = window.open(); if (w) w.document.write(`<img src="${session.errorInputImage}" style="max-width:100%;height:auto;" />`); }} />
+          ) : (
+            <p className="text-[11px] text-[#37352f]/70 leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto bg-[#f7f7f5] p-2.5 rounded border border-[#e4e4e3]">
+              {session.errorInputText}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start max-w-7xl mx-auto px-6 relative min-h-[80vh] text-[#37352f]" onPaste={handlePaste} id="study-panel">
+    <div className="relative w-full min-h-[80vh] text-[#37352f]" onPaste={handlePaste} id="study-panel">
+
+      {/* Slide-in diagnostics sidebar */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-40 flex justify-end" onClick={() => setSidebarOpen(false)}>
+          <div className="w-80 bg-white border-l border-[#e4e4e3] shadow-xl h-full overflow-y-auto p-5 space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center pb-3 border-b border-[#e4e4e3]">
+              <span className="text-xs font-bold text-[#37352f] uppercase tracking-wider">Session Info</span>
+              <button onClick={() => setSidebarOpen(false)} className="p-1 rounded hover:bg-[#f1f1ef] text-[#37352f]/50 cursor-pointer text-lg leading-none">×</button>
+            </div>
+            {sidebarContent}
+          </div>
+        </div>
+      )}
+
+      {/* Tab button to open sidebar — floats on right edge */}
+      <button
+        onClick={() => setSidebarOpen(o => !o)}
+        className="fixed right-0 top-1/2 -translate-y-1/2 z-50 bg-[#37352f] text-white text-[10px] font-bold uppercase tracking-wider py-4 px-1.5 rounded-l-md shadow-lg cursor-pointer hover:bg-[#2c2b27] transition-colors writing-mode-vertical"
+        style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
+        title="Toggle session info"
+      >
+        {session.microSkill ? session.microSkill.name.slice(0, 20) + '…' : 'Session Info'}
+      </button>
       
       {/* Loading overlay with helpful MCAT coaching tips - Clean Notion style wrapper */}
       {isLoading && (
@@ -501,8 +575,8 @@ export function ActiveChatSession({
         </div>
       )}
 
-      {/* Main Workspace (Coaching Dialogue, drills, or flashcards) */}
-      <div className="lg:col-span-8 flex flex-col space-y-5" id="main-coaching-box">
+      {/* Main Workspace — full width */}
+      <div className="flex flex-col space-y-5 max-w-6xl mx-auto px-6 w-full" id="main-coaching-box">
         
         {/* Progress Tracker Banner */}
         <div className="bg-white border border-[#e4e4e3] p-3.5 rounded-md flex items-center justify-between shadow-[0_1px_2px_rgba(15,15,15,0.05)]" id="session-stage-progress">
@@ -1057,69 +1131,6 @@ export function ActiveChatSession({
           </div>
         )}
 
-      </div>
-
-      {/* Side Diagnostics Panel (Always display the active micro-skill analysis or WRONG question screenshot once logged) */}
-      <div className="lg:col-span-4 space-y-5 animate-fade-in" id="coaching-side-sidebar">
-        
-        {/* Identified Gap Diagnostics Board */}
-        {session.microSkill ? (
-          <div className="bg-[#f7f7f5] border border-[#e4e4e3] rounded-md p-4 space-y-3.5" id="side-classified-panel">
-            <div className="space-y-0.5 pb-2 border-b border-[#e4e4e3]">
-              <span className="text-[9px] font-bold text-amber-600 block uppercase tracking-wider">Identified MCQ Diagnostic</span>
-              <h4 className="font-bold text-[#37352f] font-sans text-xs tracking-tight">Mastery Details</h4>
-            </div>
-
-            <div className="space-y-3 text-xs font-sans text-[#37352f]/70" id="side-gaps-list">
-              <div>
-                <span className="font-bold text-[#37352f]/40 block uppercase tracking-wider text-[8px] font-sans">Micro-Skill Concept</span>
-                <p className="font-bold text-[#37352f] mt-0.5">{session.microSkill.name}</p>
-              </div>
-
-              <div>
-                <span className="font-bold text-[#37352f]/40 block uppercase tracking-wider text-[8px] font-sans">Overarching MCAT Class</span>
-                <p className="font-semibold text-[#37352f]/80 mt-0.5">{session.microSkill.broadTopic}</p>
-              </div>
-
-              <div>
-                <span className="font-bold text-[#37352f]/40 block uppercase tracking-wider text-[8px] font-sans">Analytical Summary</span>
-                <p className="italic text-[#37352f]/60 leading-normal mt-0.5 text-[11px]">{session.microSkill.description}</p>
-              </div>
-
-              {session.conceptSummary && (
-                <div className="pt-3 border-t border-[#e4e4e3]">
-                  <span className="font-bold text-[#37352f]/40 block uppercase tracking-wider text-[8px] font-sans">Memory Hook & Analogy</span>
-                  <p className="mt-1 text-[#37352f]/70 leading-relaxed text-[11px] line-clamp-6" title={session.conceptSummary}>
-                    {session.conceptSummary}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="bg-[#f7f7f5]/40 border border-[#e4e4e3] rounded-md p-5 text-center text-[#37352f]/40 text-xs font-sans py-12" id="side-no-gap-indicator">
-            No active micro-skill gap classified. Upload your wrong question to populate live diagnostics.
-          </div>
-        )}
-
-        {/* Uploaded Incorrect Question Preview */}
-        {session.errorInputImage && (
-          <div className="bg-white border border-[#e4e4e3] rounded-md p-4 space-y-2 shadow-[0_1px_2px_rgba(15,15,15,0.03)]" id="side-screenshot-panel">
-            <span className="font-semibold text-[#37352f]/50 block uppercase tracking-wider text-[8px] font-sans">Source Error Screenshot</span>
-            <img
-              src={session.errorInputImage}
-              alt="Source Question"
-              className="w-full rounded border border-[#e4e4e3] shadow-xs cursor-zoom-in hover:opacity-95 transition-opacity"
-              onClick={() => {
-                const w = window.open();
-                if (w) {
-                  w.document.write(`<img src="${session.errorInputImage}" style="max-width:100%; height:auto;" />`);
-                }
-              }}
-              title="Click to view full-size image"
-            />
-          </div>
-        )}
       </div>
 
     </div>

@@ -302,7 +302,7 @@ export default function App() {
           <div className="grid grid-cols-1 md:grid-cols-12 gap-6 max-w-7xl mx-auto px-6" id="sessions-layout-container">
             
             {/* Left sidebar containing session lists */}
-            <div className="md:col-span-3 space-y-4 bg-[#f7f7f5] p-3.5 border border-[#e4e4e3] rounded-lg h-fit" id="chats-sidebar">
+            <div className="md:col-span-2 space-y-4 bg-[#f7f7f5] p-3.5 border border-[#e4e4e3] rounded-lg h-fit" id="chats-sidebar">
               <div className="flex justify-between items-center pb-2 border-b border-[#e4e4e3]" id="sidebar-action">
                 <span className="text-xs font-bold text-[#37352f]/70 font-sans tracking-wide">STUDY SESSIONS</span>
                 <button
@@ -374,7 +374,7 @@ export default function App() {
             </div>
 
             {/* Right main workspace loading the active chat */}
-            <div className="md:col-span-9" id="active-dialogue-col">
+            <div className="md:col-span-10" id="active-dialogue-col">
               {activeSessionId && activeSessionObj ? (
                 <ActiveChatSession
                   key={activeSessionId}
