@@ -6,51 +6,6 @@ import { SpacedRepetitionDeck } from './components/SpacedRepetitionDeck';
 import { InterleavingQuizRunner } from './components/InterleavingQuizRunner';
 import { BookOpen, Layers, Sparkles, MessageSquare, Plus, PenTool, Trash2, Award, LogOut, LayoutDashboard } from 'lucide-react';
 
-// Seeding standard initial data if local storage is clean
-const SEED_MICRO_SKILLS: MicroSkill[] = [
-  {
-    id: 'seed_HH',
-    name: 'Logarithmic estimation of pH in buffers using Henderson-Hasselbalch under speed pressure',
-    description: 'Confusion when approximation log values without a calculator (e.g., log of 0.05 or estimating ratio outputs above 1).',
-    broadTopic: 'Chemistry/Physics - Solutions',
-    masteryStreak: 1,
-    unresolvedCount: 2
-  },
-  {
-    id: 'seed_Galvanic',
-    name: 'Distinguishing galvanic vs electrolytic salt bridge charge direction and anode terminals',
-    description: 'Misunderstanding charge flow and why anodes are negative in galvanic systems but positive in electrolytic cells.',
-    broadTopic: 'Chemistry/Physics - Electrochemistry',
-    masteryStreak: 3,
-    masteredAt: Date.now() - 2 * 24 * 60 * 60 * 1000,
-    unresolvedCount: 1
-  },
-  {
-    id: 'seed_Enzymes',
-    name: 'Interpreting Competitive vs Mixed Enzyme Inhibition plot intersections (Vmax and Km)',
-    description: 'Translating Lineweaver-Burk intersections when alpha and alpha-prime parameters differ.',
-    broadTopic: 'Biology/Biochemistry - Enzyme Kinetics',
-    masteryStreak: 2,
-    unresolvedCount: 1
-  }
-];
-
-const SEED_FLASHCARDS: Flashcard[] = [
-  {
-    id: 'seed_fc_1',
-    microSkillId: 'seed_Galvanic',
-    microSkillName: 'Distinguishing galvanic vs electrolytic salt bridge charge direction and anode terminals',
-    format: 'basic',
-    front: 'Does the anode carry a negative or positive charge in an electrolytic cell compared to a galvanic cell, and why?',
-    back: 'Galvanic Cell: Anode is negative because oxidation occurs spontaneously releasing electrons. Electrolytic Cell: Anode is positive because an external voltage source withdraws electrons, forcing oxidation at the anode.',
-    userExplanationCheck: 'Anodes are always sites of oxidation. Spontaneous galvanic releases electrons (negative anode); nonspontaneous electrolytic pulls them away (positive anode).',
-    createdAt: Date.now() - 24 * 60 * 60 * 1000 * 2,
-    repetitions: 1,
-    interval: 1,
-    easeFactor: 2.5,
-    nextReviewDate: Date.now() - 1000 // due now
-  }
-];
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
@@ -100,13 +55,13 @@ export default function App() {
       if (storedFlashcards) {
         setFlashcards(JSON.parse(storedFlashcards));
       } else {
-        setFlashcards(SEED_FLASHCARDS);
+        setFlashcards([]);
       }
 
       if (storedSkills) {
         setMicroSkills(JSON.parse(storedSkills));
       } else {
-        setMicroSkills(SEED_MICRO_SKILLS);
+        setMicroSkills([]);
       }
     } catch (e) {
       console.error('Error loading localStorage:', e);
