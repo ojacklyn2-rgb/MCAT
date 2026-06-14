@@ -6,19 +6,25 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { history, microSkill, latestMessage } = req.body;
+  const { history, microSkill, latestMessage, originalQuestion } = req.body;
   if (!latestMessage) return res.status(400).json({ error: "Missing latest student message." });
 
   const formattedHistory = (history || []).map((msg: any) =>
     `${msg.sender === "user" ? "Student" : "Coach"}: ${msg.text}`
   ).join("\n");
 
+  const anchorContext = originalQuestion
+    ? `\n\nANCHOR — The original question the student got wrong:\n"${originalQuestion}"\n\nStay focused on THIS question's concept. Do not ask about unrelated topics.`
+    : "";
+
   const systemPrompt = `You are an expert MCAT Socratic tutor building 520+ scorers. You MUST respond with valid JSON only.
 
 Rules:
-- Never give the direct answer. Keep the student in the driver's seat.
-- Use analogies and clinical examples. Switch approach if they struggle twice.
-- Only set readyForMastery to true for genuine mechanistic understanding.
+- ALWAYS stay anchored to the specific concept from the original question.
+- Never give the direct answer. Guide the student to discover it themselves.
+- Use analogies and clinical examples relevant to the specific concept being tested.
+- Switch approach if they struggle twice in a row.
+- Only set readyForMastery to true when the student demonstrates genuine mechanistic understanding.${anchorContext}
 
 Return this exact JSON:
 {

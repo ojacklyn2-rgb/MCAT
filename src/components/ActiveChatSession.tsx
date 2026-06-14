@@ -83,6 +83,23 @@ export function ActiveChatSession({
     setDrillChatText('');
   }, [activeDrillIndex]);
 
+  // Global Ctrl+V paste support for images (works even when textarea isn't focused)
+  useEffect(() => {
+    if (session.stage !== 'intake') return;
+    const handleGlobalPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          const blob = items[i].getAsFile();
+          if (blob) handleImageUpload(blob);
+        }
+      }
+    };
+    document.addEventListener('paste', handleGlobalPaste);
+    return () => document.removeEventListener('paste', handleGlobalPaste);
+  }, [session.stage]);
+
   // Handle Drag & Drop / Image Selection
   const handleImageUpload = (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -192,7 +209,7 @@ export function ActiveChatSession({
         {
           id: `msg_init_${Date.now()}`,
           sender: 'assistant',
-          text: `**Micro-Skill Gap Detected:** ${data.microSkillName}\n\n**Analogy & Concept Blueprint:**\n${data.conceptSummary}\n\n**Diagnostic Socratic Question:**\n${data.socraticOpener}`,
+          text: `**Gap identified:** ${data.microSkillName}\n\n${data.conceptSummary}\n\n${data.socraticOpener}`,
           timestamp: Date.now()
         }
       ];
@@ -247,7 +264,8 @@ export function ActiveChatSession({
         body: JSON.stringify({
           history: currentMessages,
           microSkill: session.microSkill,
-          latestMessage: userMsg.text
+          latestMessage: userMsg.text,
+          originalQuestion: session.errorInputText || ''
         })
       });
 
